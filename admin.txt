@@ -1,0 +1,40 @@
+
+(V) add board di detail projek belum berfungsi http://127.0.0.1:8000/admin/projects/show/1
+(V) edit project di detail projek belum berfungsi http://127.0.0.1:8000/admin/projects/show/1
+(V) add list disembunyikan http://127.0.0.1:8000/admin/projects/1/boards/1
+(V) menambahkan projek belum sekalian menambahkan member
+(V) sembunyikan thumbnail
+(V) seharusnya Ketika menambah projek Zacky langsung menjadi member superadmin 
+(V) view details tidak bisa masuk dari teamlead http://127.0.0.1:8000/admin/projects/20
+(V) create board gagal http://127.0.0.1:8000/admin/projects/show/2
+(V) teamlead dashboard eror setelah member bekerja, ada hubungannya dengan timelogs http://127.0.0.1:8000/teamlead/dashboard
+(V) dari designer belum bisa masuk ke detail projek http://127.0.0.1:8000/admin/projects/23
+time tracking
+mengganti status projects selesai itu lewat mana
+apakah mau dibuat seluruh board dalam satu halaman dan seleruh card dalam satu halaman juga, komentar langsung di dalam card tersebut
+reportnya seperti apa 
+sembunyikan settings project (icon gear)
+sembunyikan dark mode, notifikasi, icon +, dan short cut
+sembunyikan edit user dari menu
+
+kasus :
+1. login admin, create projek baru dan tambahkan teamlead, developer, designer
+2. logout kemudian login teamlead, dari teamlead nambahkan board
+3. teamlead nambahkan card dari assign ke developer, tambahkan task dan comment
+4. teamlead nambahkan card dari assign ke designer, tambahkan task dan comment
+5. logout, kemudian login developer masuk board dan masuk card, kerjakan dan kasih comment/komentar
+6. logout, kemudian login designer masuk board dan masuk card, kerjakan dan kasih comment/komentar
+7. logout, masuk teamlead lagi, apakah kelihatan dari monitoring, masuk board -> card kasih komentar
+8. logout, kemudian login developer masuk board dan masuk card, selesaikan dan kasih comment/komentar
+9. logout, kemudian login designer masuk board dan masuk card, selesaikan dan kasih comment/komentar
+10. logout, masuk teamlead lagi, selesaikan board kasih komentar
+11. logout, masuk admin selesaikan projek
+
+
+1. coba login dari admin, teamlead, developer, designer
+2. coba buat projek dari admin, coba tambahkan anggota tim
+3. buat board dari teamlead, buat card dan subtask
+4. coba tampilkan monitoring board, card, dan subtask -> seperti tmn
+5. board ada 4, todo - in progress - review - done, harus bisa pindah secara otomatis 
+6. coba tampilkan report -> seperti apa?
+

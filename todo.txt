@@ -1,0 +1,10 @@
+admin :
+project leader bagian monitoring masih eror (tidak keluar orangnya)
+menu admin project disembunyikan dulu, jadi setelah membuat projek kembalinya ke dashboard 
+edit project belum bisa
+user belum bisa add user
+report/laporan belum bisa
+admin report dibuat seperti teamlead
+menu pengaturan dan profil disembunyikan dulu 
+member distribution bagian monitoring disembunyikan dulu
+monitoring project task sembunyikan dulu
