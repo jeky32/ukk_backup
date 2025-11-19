@@ -8,6 +8,7 @@ use App\Models\CardAssignment;
 use App\Models\Comment;
 use App\Models\TimeLog;
 use App\Models\Project;
+use App\Models\Board;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
@@ -45,7 +46,7 @@ class DeveloperController extends Controller
         $myProjects = Project::whereHas('members', function($query) use ($user) {
                 $query->where('user_id', $user->id);
             })
-            ->with(['boards.cards'])
+            ->with(['boards.cards', 'members'])
             ->get();
 
         // Get time logs
@@ -64,9 +65,7 @@ class DeveloperController extends Controller
             ->whereNotNull('duration_minutes')
             ->sum('duration_minutes') / 60;
 
-        // === TAMBAHAN KODE BARU ===
-
-        // DAFTAR TUGAS SAYA: Cards dengan status 'todo' yang di-assign ke user ini
+        // Todo Tasks
         $todoTasks = CardAssignment::with(['card.board.project', 'card.comments'])
             ->where('user_id', $user->id)
             ->whereHas('card', function($query) {
@@ -84,7 +83,7 @@ class DeveloperController extends Controller
             ])
             ->values();
 
-        // TUGAS SAAT INI: Card tertinggi dari todoTasks atau yang sedang dikerjakan
+        // Current Task Detail
         $currentTaskDetail = null;
         $currentTaskComments = collect([]);
 
@@ -110,7 +109,7 @@ class DeveloperController extends Controller
                 ->get();
         }
 
-        // TIME TRACKING: Time logs di hari terakhir ada data
+        // Today Time Logs
         $latestTimeLog = TimeLog::where('user_id', $user->id)
             ->whereNotNull('end_time')
             ->latest('end_time')
@@ -132,7 +131,7 @@ class DeveloperController extends Controller
             $todayTotalHours = $todayTimeLogs->sum('duration_minutes') / 60;
         }
 
-        // UPDATE TERBARU: Comments dengan keyword tertentu
+        // Important Updates
         $importantUpdates = Comment::with(['card', 'user'])
             ->where(function($query) {
                 $query->where('comment_text', 'like', '%[APPROVED]%')
@@ -149,7 +148,7 @@ class DeveloperController extends Controller
             ->limit(10)
             ->get();
 
-        // PRODUCTIVITY: Statistics untuk bulan ini
+        // ✅ ACHIEVEMENT STATS - This Month Performance
         $thisMonth = now()->month;
         $thisYear = now()->year;
 
@@ -177,6 +176,7 @@ class DeveloperController extends Controller
                 : 0;
         }
 
+        // ✅ On-Time Rate Calculation
         $completedWithDeadline = CardAssignment::where('user_id', $user->id)
             ->where('assignment_status', 'completed')
             ->whereYear('completed_at', $thisYear)
@@ -202,12 +202,31 @@ class DeveloperController extends Controller
             ? ($onTimeCount / $completedWithDeadline->count()) * 100
             : 0;
 
+        // ✅ Productivity Rating (0-5 scale)
         $productivityRating = 0;
         if ($completedThisMonth > 0) {
-            $taskScore = min($completedThisMonth / 5, 1) * 2.5;
-            $onTimeScore = ($onTimeRate / 100) * 2.5;
+            $taskScore = min($completedThisMonth / 10, 1) * 2.5; // Max 2.5 from task count
+            $onTimeScore = ($onTimeRate / 100) * 2.5; // Max 2.5 from on-time rate
             $productivityRating = $taskScore + $onTimeScore;
         }
+
+        // ✅ Overall Rating (0-5 scale)
+        $rating = $this->calculateDeveloperRating($user->id);
+        
+        // ✅ Quality Score (percentage)
+        $qualityScore = $this->calculateQualityScore($user->id);
+        
+        // ✅ Response Time
+        $avgResponseTime = $this->calculateResponseTime($user->id);
+
+        // ✅ Get cards by status untuk display (FIXED)
+        $myCards = Card::whereHas('assignments', function($query) use ($user) {
+            $query->where('user_id', $user->id);
+        })
+        ->with(['board.project', 'assignments.user', 'subtasks', 'timeLogs'])
+        ->whereIn('status', ['todo', 'in_progress', 'review', 'done'])
+        ->orderBy('updated_at', 'desc')
+        ->get();
 
         return view('developer.dashboard', compact(
             'myTasks',
@@ -215,6 +234,7 @@ class DeveloperController extends Controller
             'activeTimeLog',
             'myProjects',
             'myTimeLogs',
+            'myCards',
             'completedTasks',
             'totalHoursWorked',
             'todoTasks',
@@ -226,8 +246,143 @@ class DeveloperController extends Controller
             'completedThisMonth',
             'averageTimePerTask',
             'onTimeRate',
-            'productivityRating'
+            'productivityRating',
+            'rating',
+            'qualityScore',
+            'avgResponseTime'
         ));
+    }
+
+    /**
+     * ✅ Calculate overall developer rating (0-5 scale)
+     */
+    private function calculateDeveloperRating($userId)
+    {
+        $thisMonth = now()->month;
+        $thisYear = now()->year;
+
+        // Factor 1: On-Time Rate (40% weight = 2 points)
+        $completedWithDeadline = CardAssignment::where('user_id', $userId)
+            ->where('assignment_status', 'completed')
+            ->whereYear('completed_at', $thisYear)
+            ->whereMonth('completed_at', $thisMonth)
+            ->whereHas('card', function($query) {
+                $query->whereNotNull('due_date');
+            })
+            ->with('card')
+            ->get();
+
+        $onTimeCount = 0;
+        foreach ($completedWithDeadline as $assignment) {
+            if ($assignment->completed_at && $assignment->card->due_date) {
+                if (\Carbon\Carbon::parse($assignment->completed_at)->lte(\Carbon\Carbon::parse($assignment->card->due_date))) {
+                    $onTimeCount++;
+                }
+            }
+        }
+
+        $onTimeRate = $completedWithDeadline->count() > 0
+            ? ($onTimeCount / $completedWithDeadline->count())
+            : 0;
+
+        $onTimeScore = $onTimeRate * 2;
+
+        // Factor 2: Task Completion Rate (30% weight = 1.5 points)
+        $totalAssigned = CardAssignment::where('user_id', $userId)
+            ->whereYear('created_at', $thisYear)
+            ->whereMonth('created_at', $thisMonth)
+            ->count();
+
+        $totalCompleted = CardAssignment::where('user_id', $userId)
+            ->where('assignment_status', 'completed')
+            ->whereYear('completed_at', $thisYear)
+            ->whereMonth('completed_at', $thisMonth)
+            ->count();
+
+        $completionRate = $totalAssigned > 0 ? ($totalCompleted / $totalAssigned) : 0;
+        $completionScore = $completionRate * 1.5;
+
+        // Factor 3: Quality (30% weight = 1.5 points)
+        $approvedCount = Comment::where('comment_text', 'like', '%[APPROVED]%')
+            ->whereHas('card.assignments', function($q) use ($userId) {
+                $q->where('user_id', $userId);
+            })
+            ->whereYear('created_at', $thisYear)
+            ->whereMonth('created_at', $thisMonth)
+            ->count();
+
+        $rejectedCount = Comment::where('comment_text', 'like', '%[REJECTED]%')
+            ->whereHas('card.assignments', function($q) use ($userId) {
+                $q->where('user_id', $userId);
+            })
+            ->whereYear('created_at', $thisYear)
+            ->whereMonth('created_at', $thisMonth)
+            ->count();
+
+        $qualityRate = ($approvedCount + $rejectedCount) > 0
+            ? ($approvedCount / ($approvedCount + $rejectedCount))
+            : 0.5;
+
+        $qualityScore = $qualityRate * 1.5;
+
+        // Total Rating (max 5.0)
+        $rating = $onTimeScore + $completionScore + $qualityScore;
+
+        return round($rating, 1);
+    }
+
+    /**
+     * ✅ Calculate quality score percentage
+     */
+    private function calculateQualityScore($userId)
+    {
+        $thisMonth = now()->month;
+        $thisYear = now()->year;
+
+        $approvedCount = Comment::where('comment_text', 'like', '%[APPROVED]%')
+            ->whereHas('card.assignments', function($q) use ($userId) {
+                $q->where('user_id', $userId);
+            })
+            ->whereYear('created_at', $thisYear)
+            ->whereMonth('created_at', $thisMonth)
+            ->count();
+
+        $totalReviews = Comment::where(function($query) {
+                $query->where('comment_text', 'like', '%[APPROVED]%')
+                      ->orWhere('comment_text', 'like', '%[REJECTED]%');
+            })
+            ->whereHas('card.assignments', function($q) use ($userId) {
+                $q->where('user_id', $userId);
+            })
+            ->whereYear('created_at', $thisYear)
+            ->whereMonth('created_at', $thisMonth)
+            ->count();
+
+        return $totalReviews > 0 ? round(($approvedCount / $totalReviews) * 100) : 0;
+    }
+
+    /**
+     * Calculate average response time (hours)
+     */
+    private function calculateResponseTime($userId)
+    {
+        $assignments = CardAssignment::where('user_id', $userId)
+            ->where('assignment_status', 'in_progress')
+            ->whereNotNull('started_at')
+            ->get();
+
+        if ($assignments->isEmpty()) {
+            return 0;
+        }
+
+        $totalHours = 0;
+        foreach ($assignments as $assignment) {
+            $assigned = \Carbon\Carbon::parse($assignment->created_at);
+            $started = \Carbon\Carbon::parse($assignment->started_at);
+            $totalHours += $assigned->diffInHours($started);
+        }
+
+        return round($totalHours / $assignments->count(), 1);
     }
 
     /**
@@ -239,7 +394,6 @@ class DeveloperController extends Controller
 
         DB::beginTransaction();
         try {
-            // Find assignment (FIX: gunakan $card->id)
             $assignment = CardAssignment::where('card_id', $card->id)
                 ->where('user_id', $user->id)
                 ->first();
@@ -248,7 +402,6 @@ class DeveloperController extends Controller
                 return back()->with('error', 'You are not assigned to this task!');
             }
 
-            // End active time log if exists (FIX: gunakan $card->id)
             $activeTimeLog = TimeLog::where('user_id', $user->id)
                 ->where('card_id', $card->id)
                 ->whereNull('end_time')
@@ -258,31 +411,26 @@ class DeveloperController extends Controller
                 $endTime = now();
                 $startTime = \Carbon\Carbon::parse($activeTimeLog->start_time);
                 $durationMinutes = $startTime->diffInMinutes($endTime);
-                
+
                 $activeTimeLog->update([
                     'end_time' => $endTime,
                     'duration_minutes' => $durationMinutes
                 ]);
-                
-                // Update card actual hours (FIX: gunakan $card->id)
+
                 $totalMinutes = TimeLog::where('card_id', $card->id)
                     ->whereNotNull('duration_minutes')
                     ->sum('duration_minutes');
                 $card->update(['actual_hours' => $totalMinutes / 60]);
             }
 
-            // Update user status to idle (field sudah ada di database)
-              $user->update(['current_task_status' => 'idle']); // ✅ No error
-
-            // Update card status to blocker (sesuai ENUM database)
+            $user->update(['current_task_status' => 'idle']);
             $card->update(['status' => 'blocker']);
 
-            // Add comment about blocking (FIX: gunakan $card->id)
             Comment::create([
                 'card_id' => $card->id,
                 'user_id' => $user->id,
                 'comment_type' => 'card',
-                'comment_text' => '[BLOCKER] Task blocked by ' . $user->full_name . '. Needs assistance.',
+                'comment_text' => '[BLOCKER] Task blocked by ' . ($user->full_name ?: $user->username) . '. Needs assistance.',
             ]);
 
             DB::commit();
@@ -304,7 +452,6 @@ class DeveloperController extends Controller
 
         DB::beginTransaction();
         try {
-            // Check if user is assigned to this card (FIX: gunakan $card->id)
             $assignment = CardAssignment::where('card_id', $card->id)
                 ->where('user_id', $user->id)
                 ->first();
@@ -313,7 +460,6 @@ class DeveloperController extends Controller
                 return back()->with('error', 'You are not assigned to this task!');
             }
 
-            // Check if user is already working on another task
             $existingWork = TimeLog::where('user_id', $user->id)
                 ->whereNull('end_time')
                 ->first();
@@ -322,21 +468,17 @@ class DeveloperController extends Controller
                 return back()->with('error', 'Please pause your current task first!');
             }
 
-            // Update user status to working
-              $user->update(['current_task_status' => 'idle']); // ✅ No error
+            $user->update(['current_task_status' => 'working']);
 
-            // Update assignment status
             $assignment->update([
                 'assignment_status' => 'in_progress',
                 'started_at' => $assignment->started_at ?? now(),
             ]);
 
-            // Update card status if it's still todo
             if ($card->status === 'todo') {
                 $card->update(['status' => 'in_progress']);
             }
 
-            // Create time log (FIX: gunakan $card->id)
             TimeLog::create([
                 'card_id' => $card->id,
                 'user_id' => $user->id,
@@ -363,7 +505,6 @@ class DeveloperController extends Controller
 
         DB::beginTransaction();
         try {
-            // Find active time log
             $activeTimeLog = TimeLog::where('user_id', $user->id)
                 ->whereNull('end_time')
                 ->first();
@@ -372,21 +513,17 @@ class DeveloperController extends Controller
                 return back()->with('error', 'No active task to pause!');
             }
 
-            // Calculate duration
             $endTime = now();
             $startTime = \Carbon\Carbon::parse($activeTimeLog->start_time);
             $durationMinutes = $startTime->diffInMinutes($endTime);
 
-            // End time log
             $activeTimeLog->update([
                 'end_time' => $endTime,
                 'duration_minutes' => $durationMinutes
             ]);
 
-            // Update user status to idle
             $user->update(['current_task_status' => 'idle']);
 
-            // Update card actual hours
             $card = $activeTimeLog->card;
             $totalMinutes = TimeLog::where('card_id', $card->id)
                 ->whereNotNull('duration_minutes')
@@ -404,7 +541,7 @@ class DeveloperController extends Controller
     }
 
     /**
-     * Complete current task
+     * ✅ Complete task & submit for Team Lead review
      */
     public function completeTask(Card $card)
     {
@@ -412,7 +549,6 @@ class DeveloperController extends Controller
 
         DB::beginTransaction();
         try {
-            // Find assignment (FIX: gunakan $card->id)
             $assignment = CardAssignment::where('card_id', $card->id)
                 ->where('user_id', $user->id)
                 ->first();
@@ -421,7 +557,11 @@ class DeveloperController extends Controller
                 return back()->with('error', 'You are not assigned to this task!');
             }
 
-            // End active time log if exists (FIX: gunakan $card->id)
+            if ($card->status !== 'in_progress') {
+                return back()->with('error', 'Task must be in progress to complete!');
+            }
+
+            // Stop active timer
             $activeTimeLog = TimeLog::where('user_id', $user->id)
                 ->where('card_id', $card->id)
                 ->whereNull('end_time')
@@ -431,42 +571,36 @@ class DeveloperController extends Controller
                 $endTime = now();
                 $startTime = \Carbon\Carbon::parse($activeTimeLog->start_time);
                 $durationMinutes = $startTime->diffInMinutes($endTime);
-                
+
                 $activeTimeLog->update([
                     'end_time' => $endTime,
                     'duration_minutes' => $durationMinutes
                 ]);
-                
-                // Update actual hours (FIX: gunakan $card->id)
+
                 $totalMinutes = TimeLog::where('card_id', $card->id)
                     ->whereNotNull('duration_minutes')
                     ->sum('duration_minutes');
                 $card->update(['actual_hours' => $totalMinutes / 60]);
             }
 
-            // Update user status to idle
-            $user->update(['current_task_status' => 'idle']); // ✅ No error
+            $user->update(['current_task_status' => 'idle']);
 
-            // Update assignment as completed
-            $assignment->update([
-                'assignment_status' => 'completed',
-                'completed_at' => now(),
+            // ✅ Status jadi REVIEW (bukan done)
+            $card->update(['status' => 'review']);
+
+            // ✅ Add submission comment
+            Comment::create([
+                'card_id' => $card->id,
+                'user_id' => $user->id,
+                'comment_type' => 'card',
+                'comment_text' => 'Task completed and submitted for review by ' . ($user->full_name ?: $user->username),
             ]);
-
-            // Check if all assignments are completed, then mark card as done
-            $allCompleted = $card->assignments()
-                ->where('assignment_status', '!=', 'completed')
-                ->count() === 0;
-
-            if ($allCompleted) {
-                $card->update(['status' => 'done']);
-            }
 
             DB::commit();
 
             return redirect()
                 ->route('developer.dashboard')
-                ->with('success', 'Task completed! Great job! 🎉');
+                ->with('success', 'Task submitted for Team Lead review! 🎉');
 
         } catch (\Exception $e) {
             DB::rollBack();
@@ -486,7 +620,6 @@ class DeveloperController extends Controller
             ->latest()
             ->paginate(20);
 
-        // Statistics
         $today = TimeLog::where('user_id', $user->id)
             ->whereDate('start_time', today())
             ->whereNotNull('duration_minutes')
@@ -512,7 +645,6 @@ class DeveloperController extends Controller
     {
         $user = Auth::user();
 
-        // Tasks statistics
         $totalTasks = CardAssignment::where('user_id', $user->id)->count();
         $completedTasks = CardAssignment::where('user_id', $user->id)
             ->where('assignment_status', 'completed')
@@ -521,18 +653,15 @@ class DeveloperController extends Controller
             ->where('assignment_status', 'in_progress')
             ->count();
 
-        // Time statistics
         $totalHours = TimeLog::where('user_id', $user->id)
             ->whereNotNull('duration_minutes')
             ->sum('duration_minutes') / 60;
 
-        // Projects
         $activeProjects = Project::whereHas('members', function($query) use ($user) {
                 $query->where('user_id', $user->id);
             })
             ->count();
 
-        // Weekly chart data
         $weeklyHours = [];
         for ($i = 6; $i >= 0; $i--) {
             $date = now()->subDays($i);
@@ -555,42 +684,35 @@ class DeveloperController extends Controller
             'activeProjects',
             'weeklyHours'
         ));
-
-        
     }
 
     /**
- * Show board detail (Read-only untuk developer)
- */
-public function showBoard(Project $project, Board $board)
-{
-    $user = Auth::user();
-    
-    // Check if user is member of this project
-    $isMember = $project->members()->where('user_id', $user->id)->exists();
-    
-    if (!$isMember) {
-        return redirect()->route('developer.dashboard')
-            ->with('error', 'You are not a member of this project!');
-    }
-    
-    // Load board dengan relasi
-    $board->load([
-        'cards' => function($query) use ($user) {
-            // Filter hanya cards yang assigned ke user ini atau semua cards (optional)
-            $query->with(['assignments.user', 'subtasks', 'comments.user'])
-                  ->orderBy('position');
-        },
-        'project.members'
-    ]);
-    
-    // Get user's assignment di board ini
-    $myAssignments = CardAssignment::whereIn('card_id', $board->cards->pluck('id'))
-        ->where('user_id', $user->id)
-        ->with('card')
-        ->get();
-    
-    return view('developer.board-show', compact('board', 'project', 'myAssignments'));
-}
+     * Show board detail (Read-only untuk developer)
+     */
+    public function showBoard(Project $project, Board $board)
+    {
+        $user = Auth::user();
 
+        $isMember = $project->members()->where('user_id', $user->id)->exists();
+
+        if (!$isMember) {
+            return redirect()->route('developer.dashboard')
+                ->with('error', 'You are not a member of this project!');
+        }
+
+        $board->load([
+            'cards' => function($query) use ($user) {
+                $query->with(['assignments.user', 'subtasks', 'comments.user'])
+                      ->orderBy('position');
+            },
+            'project.members'
+        ]);
+
+        $myAssignments = CardAssignment::whereIn('card_id', $board->cards->pluck('id'))
+            ->where('user_id', $user->id)
+            ->with('card')
+            ->get();
+
+        return view('developer.board-show', compact('board', 'project', 'myAssignments'));
+    }
 }

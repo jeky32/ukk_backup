@@ -21,10 +21,11 @@ class ReportController extends Controller
     {
         $user = Auth::user();
 
+        // ✅ FIX: Tambah 'project_members.' sebelum 'role'
         $projects = Project::where('created_by', $user->id)
             ->orWhereHas('members', function($q) use ($user) {
                 $q->where('project_members.user_id', $user->id)
-                  ->whereIn('role', ['super_admin', 'admin']);
+                  ->whereIn('project_members.role', ['super_admin', 'admin']); // ✅ FIX
             })
             ->with(['boards.cards', 'members'])
             ->latest()
@@ -45,7 +46,7 @@ class ReportController extends Controller
         ]);
 
         $project = Project::with([
-            'boards.cards.assignedMembers',
+            'boards.cards.assignments.user',
             'boards.cards.subtasks',
             'boards.cards.comments.user',
             'members',
@@ -54,9 +55,6 @@ class ReportController extends Controller
 
         // Check access
         $user = Auth::user();
-        //if ($project->created_by !== $user->id && !$user->isAdmin($user->id)) {
-        //    abort(403, 'Unauthorized access.');
-        //}
 
         // Calculate statistics
         $stats = $this->calculateProjectStats($project, $validated);
@@ -89,11 +87,11 @@ class ReportController extends Controller
 
         $user = Auth::user();
 
-        // Get projects
+        // ✅ FIX: Tambah 'project_members.' sebelum 'role'
         $projectsQuery = Project::where('created_by', $user->id)
             ->orWhereHas('members', function($q) use ($user) {
                 $q->where('project_members.user_id', $user->id)
-                  ->whereIn('role', ['super_admin', 'admin']);
+                  ->whereIn('project_members.role', ['super_admin', 'admin']); // ✅ FIX
             });
 
         if (isset($validated['project_id'])) {
@@ -132,14 +130,14 @@ class ReportController extends Controller
 
         $user = Auth::user();
 
-        // Get all projects
+        // ✅ FIX: Tambah 'project_members.' sebelum 'role'
         $projects = Project::where('created_by', $user->id)
             ->orWhereHas('members', function($q) use ($user) {
                 $q->where('project_members.user_id', $user->id)
-                  ->whereIn('role', ['super_admin', 'admin']);
+                  ->whereIn('project_members.role', ['super_admin', 'admin']); // ✅ FIX
             })
             ->with([
-                'boards.cards.assignedMembers',
+                'boards.cards.assignments.user',
                 'boards.cards.subtasks',
                 'members',
                 'creator'
@@ -196,7 +194,11 @@ class ReportController extends Controller
         $reviewTasks = $cards->where('status', 'review')->count();
 
         $highPriorityTasks = $cards->where('priority', 'high')->count();
-        $overdueTasks = $cards->filter(fn($c) => $c->is_overdue)->count();
+
+        // ✅ FIX: Check if due_date exists before checking overdue
+        $overdueTasks = $cards->filter(function($card) {
+            return $card->due_date && now()->greaterThan($card->due_date) && $card->status !== 'done';
+        })->count();
 
         $totalEstimatedHours = $cards->sum('estimated_hours');
         $totalActualHours = $cards->sum('actual_hours');
@@ -225,34 +227,40 @@ class ReportController extends Controller
     {
         $projectIds = $projects->pluck('id');
 
-        $teamMembers = User::whereHas('projects', function($query) use ($projectIds) {
-                $query->whereIn('projects.id', $projectIds);
+        // ✅ FIX: Gunakan projectMembers relationship yang benar
+        $teamMembers = User::whereHas('projectMembers', function($query) use ($projectIds) {
+                $query->whereIn('project_members.project_id', $projectIds);
             })
-            ->with(['cardAssignments', 'timeLogs'])
+            ->with(['assignments', 'timeLogs'])
             ->get();
 
         return $teamMembers->map(function($member) use ($projectIds, $filters) {
-            $assignments = $member->cardAssignments()
+            // ✅ FIX: Gunakan assignments relationship
+            $assignments = $member->assignments()
                 ->whereHas('card.board', function($query) use ($projectIds) {
                     $query->whereIn('project_id', $projectIds);
                 })
                 ->get();
 
-            $timeLogsQuery = $member->timeLogs()
-                ->whereHas('card.board', function($query) use ($projectIds) {
-                    $query->whereIn('project_id', $projectIds);
-                });
+            // ✅ Check if timeLogs method exists
+            $totalMinutes = 0;
+            if (method_exists($member, 'timeLogs')) {
+                $timeLogsQuery = $member->timeLogs()
+                    ->whereHas('card.board', function($query) use ($projectIds) {
+                        $query->whereIn('project_id', $projectIds);
+                    });
 
-            // Filter by date
-            if (isset($filters['start_date']) && isset($filters['end_date'])) {
-                $timeLogsQuery->whereBetween('start_time', [
-                    Carbon::parse($filters['start_date']),
-                    Carbon::parse($filters['end_date'])
-                ]);
+                // Filter by date
+                if (isset($filters['start_date']) && isset($filters['end_date'])) {
+                    $timeLogsQuery->whereBetween('start_time', [
+                        Carbon::parse($filters['start_date']),
+                        Carbon::parse($filters['end_date'])
+                    ]);
+                }
+
+                $timeLogs = $timeLogsQuery->get();
+                $totalMinutes = $timeLogs->whereNotNull('duration_minutes')->sum('duration_minutes');
             }
-
-            $timeLogs = $timeLogsQuery->get();
-            $totalMinutes = $timeLogs->whereNotNull('duration_minutes')->sum('duration_minutes');
 
             $totalTasks = $assignments->count();
             $completedTasks = $assignments->where('assignment_status', 'completed')->count();

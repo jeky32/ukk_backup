@@ -39,7 +39,7 @@
     <div class="bg-white rounded-2xl shadow-lg p-6 mb-6 border border-gray-100">
         <div class="flex items-center justify-between">
             <div class="flex items-center space-x-4">
-                <a href="{{ route('admin.projects.show', $project) }}"
+                <a href="{{ route('admin.projects.show', $project->id) }}"
                    class="flex items-center justify-center w-10 h-10 rounded-xl bg-gray-100 text-gray-600 hover:bg-gray-200 hover:text-gray-800 transition">
                     <i class="fas fa-arrow-left"></i>
                 </a>
@@ -56,11 +56,11 @@
                 <div class="flex -space-x-3">
                     @foreach($project->members->take(5) as $member)
                     <div class="relative group">
-                        <img src="https://i.pravatar.cc/150?img={{ $loop->index + 1 }}"
-                             alt="{{ $member->full_name }}"
+                        <img src="https://ui-avatars.com/api/?name={{ urlencode($member->full_name ?? $member->user->full_name) }}&size=128&background=random"
+                             alt="{{ $member->full_name ?? $member->user->full_name }}"
                              class="w-10 h-10 rounded-full border-3 border-white shadow-md ring-2 ring-gray-100">
                         <div class="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-3 py-1 bg-gray-900 text-white text-xs rounded-lg opacity-0 group-hover:opacity-100 whitespace-nowrap pointer-events-none z-10 transition">
-                            {{ $member->full_name }}
+                            {{ $member->full_name ?? $member->user->full_name }}
                         </div>
                     </div>
                     @endforeach
@@ -113,9 +113,10 @@
 
                 <div class="p-4 space-y-3 board-column bg-gradient-to-b from-{{ $config['color'] }}-50/30 to-white" id="{{ $status }}-cards">
                     @foreach($board->cards->where('status', $status) as $card)
-                        <a href="{{ route('admin.cards.show', $card->id) }}" class="block">
+                        {{-- ✅ FIX: Gunakan onclick untuk modal atau route yang benar --}}
+                        <div onclick="openCardDetailModal({{ $card->id }})" class="cursor-pointer">
                             @include('components.card-item', ['card' => $card])
-                        </a>
+                        </div>
                     @endforeach
                 </div>
 
@@ -303,6 +304,12 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     }
 });
+
+// ✅ FIX: Function untuk buka card detail
+function openCardDetailModal(cardId) {
+    // Redirect ke halaman card detail
+    window.location.href = `/admin/cards/${cardId}`;
+}
 
 // Modal functions
 function openAddCardModal(status) {

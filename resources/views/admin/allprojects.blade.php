@@ -519,12 +519,12 @@
                             </div>
                         </div>
 
-                        <!-- Notifications -->
+                        {{--  <!-- Notifications -->
                         <button class="relative p-2.5 text-gray-600 hover:bg-white rounded-lg transition shadow-sm icon-bounce">
                             <i class="fas fa-bell text-lg"></i>
                             <span class="absolute top-1 right-1 w-2.5 h-2.5 bg-red-500 rounded-full animate-ping"></span>
                             <span class="absolute top-1 right-1 w-2.5 h-2.5 bg-red-500 rounded-full"></span>
-                        </button>
+                        </button>  --}}
 
                         <!-- User Menu -->
                         <div class="relative" x-data="{ open: false }">

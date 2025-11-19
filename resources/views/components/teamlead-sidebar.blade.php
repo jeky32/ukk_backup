@@ -147,10 +147,10 @@
             </div>
         </div>
 
-        <!-- Navigation Menu - 6 MENU TEAM LEAD (+ Dashboard) -->
+        <!-- Navigation Menu -->
         <nav class="relative flex-1 p-4 pt-6 overflow-y-auto scrollbar-thin scrollbar-thumb-white/20 dark:scrollbar-thumb-gray-700">
             <ul class="space-y-2">
-                <!-- ✅ DASHBOARD (BARU) -->
+                <!-- Dashboard -->
                 <li>
                     <a href="{{ route('teamlead.dashboard') }}"
                        class="flex items-center space-x-3 px-4 py-3 rounded-xl transition-all duration-200 relative
@@ -180,16 +180,36 @@
                     </a>
                 </li>
 
-                <!-- Monitoring -->
+                <!-- Review & Approval -->
                 <li>
-                    <a href="{{ route('teamlead.monitoring') }}"
+                    <a href="{{ route('teamlead.review') }}"
                        class="flex items-center space-x-3 px-4 py-3 rounded-xl transition-all duration-200 relative
-                              {{ request()->routeIs('teamlead.monitoring.*')
+                              {{ request()->routeIs('teamlead.review*')
                                  ? 'bg-gradient-to-r from-purple-500 via-blue-500 to-teal-400 text-white shadow-lg'
                                  : 'text-white/70 hover:bg-white/10 hover:text-white' }}">
-                        <i class="fas fa-chart-line text-lg w-5 text-center"></i>
-                        <span x-show="!collapsed" x-transition class="font-medium">Monitoring</span>
-                        @if(request()->routeIs('teamlead.monitoring.*'))
+                        <i class="fas fa-clipboard-check text-lg w-5 text-center"></i>
+                        <span x-show="!collapsed" x-transition class="font-medium">Review & Approval</span>
+
+                        @php
+                            try {
+                                $pendingReviews = \App\Models\Card::where('cards.status', 'review')
+                                    ->whereHas('board.project.members', function($q) {
+                                        $q->where('project_members.user_id', Auth::id())
+                                          ->whereIn('project_members.role', ['admin', 'super_admin']);
+                                    })
+                                    ->count();
+                            } catch (\Exception $e) {
+                                $pendingReviews = 0;
+                            }
+                        @endphp
+
+                        @if($pendingReviews > 0)
+                        <span x-show="!collapsed" class="absolute right-3 top-3 px-2 py-0.5 bg-orange-500 text-white text-xs font-bold rounded-full">
+                            {{ $pendingReviews }}
+                        </span>
+                        @endif
+
+                        @if(request()->routeIs('teamlead.review*'))
                             <span class="absolute right-3 w-2 h-2 bg-white rounded-full animate-ping"></span>
                         @endif
                     </a>
@@ -210,47 +230,38 @@
                     </a>
                 </li>
 
-                    <!-- Messages -->
-                    <li>
-                        <a href="{{ route('teamlead.messages') }}"
-                        class="flex items-center space-x-3 px-4 py-3 rounded-xl transition-all duration-200 relative
-                                {{ request()->routeIs('teamlead.messages') ? 'bg-white/20 text-white' : 'text-white/70 hover:bg-white/10 hover:text-white' }}">
-                            <i class="fas fa-comments text-lg w-5 text-center"></i>
-                            <span x-show="!collapsed" x-transition class="font-medium">Messages</span>
-                            <span x-show="!collapsed" class="absolute right-3 top-3 px-1.5 py-0.5 bg-red-500 text-white text-xs font-bold rounded-full">
-                                3
-                            </span>
-                        </a>
-                    </li>
-
-
-                <!-- Review -->
+                <!-- Messages -->
                 <li>
-                    <a href="#"
+                    <a href="{{ route('teamlead.messages') }}"
                        class="flex items-center space-x-3 px-4 py-3 rounded-xl transition-all duration-200 relative
-                              text-white/70 hover:bg-white/10 hover:text-white">
-                        <i class="fas fa-clipboard-check text-lg w-5 text-center"></i>
-                        <span x-show="!collapsed" x-transition class="font-medium">Review</span>
-                        <span x-show="!collapsed" class="absolute right-3 top-3 px-1.5 py-0.5 bg-orange-500 text-white text-xs font-bold rounded-full">
-                            5
+                              {{ request()->routeIs('teamlead.messages')
+                                 ? 'bg-gradient-to-r from-purple-500 via-blue-500 to-teal-400 text-white shadow-lg'
+                                 : 'text-white/70 hover:bg-white/10 hover:text-white' }}">
+                        <i class="fas fa-comments text-lg w-5 text-center"></i>
+                        <span x-show="!collapsed" x-transition class="font-medium">Messages</span>
+                        <span x-show="!collapsed" class="absolute right-3 top-3 px-1.5 py-0.5 bg-red-500 text-white text-xs font-bold rounded-full">
+                            3
                         </span>
+                        @if(request()->routeIs('teamlead.messages'))
+                            <span class="absolute right-3 w-2 h-2 bg-white rounded-full animate-ping"></span>
+                        @endif
                     </a>
                 </li>
 
-                 <!-- Riwayat -->
-        <li>
-            <a href="{{ route('teamlead.riwayat.index') }}"
-               class="flex items-center space-x-3 px-4 py-3 rounded-xl transition-all duration-200 relative
-                      {{ request()->routeIs('teamlead.riwayat*')
-                         ? 'bg-gradient-to-r from-purple-500 via-blue-500 to-teal-400 text-white shadow-lg'
-                         : 'text-white/70 hover:bg-white/10 hover:text-white' }}">
-                <i class="fas fa-history text-lg w-5 text-center"></i>
-                <span x-show="!collapsed" x-transition class="font-medium">Riwayat</span>
-                @if(request()->routeIs('teamlead.riwayat*'))
-                    <span class="absolute right-3 w-2 h-2 bg-white rounded-full animate-ping"></span>
-                @endif
-            </a>
-        </li>
+                <!-- Riwayat -->
+                <li>
+                    <a href="{{ route('teamlead.riwayat.index') }}"
+                       class="flex items-center space-x-3 px-4 py-3 rounded-xl transition-all duration-200 relative
+                              {{ request()->routeIs('teamlead.riwayat*')
+                                 ? 'bg-gradient-to-r from-purple-500 via-blue-500 to-teal-400 text-white shadow-lg'
+                                 : 'text-white/70 hover:bg-white/10 hover:text-white' }}">
+                        <i class="fas fa-history text-lg w-5 text-center"></i>
+                        <span x-show="!collapsed" x-transition class="font-medium">Riwayat</span>
+                        @if(request()->routeIs('teamlead.riwayat*'))
+                            <span class="absolute right-3 w-2 h-2 bg-white rounded-full animate-ping"></span>
+                        @endif
+                    </a>
+                </li>
 
                 <!-- Divider -->
                 <li class="py-2">

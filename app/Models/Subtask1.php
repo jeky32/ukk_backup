@@ -4,7 +4,7 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
 
-class Subtask extends Model
+class Subtask1 extends Model
 {
     protected $primaryKey = 'subtask_id';
     public $timestamps = false;

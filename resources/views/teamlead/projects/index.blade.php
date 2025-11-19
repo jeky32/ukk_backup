@@ -172,9 +172,9 @@
 
                         <!-- Action Button Berwarna -->
                         <a href="{{ route('teamlead.projects.show', $project->id) }}"
-                           class="block w-full text-center px-4 py-2.5 {{ $theme['btn'] }} text-white rounded-lg font-semibold transition-colors text-sm shadow-md">
-                            <i class="fas fa-arrow-right mr-2"></i>
-                            View Project
+                        class="block w-full text-center px-4 py-2.5 {{ $theme['btn'] }} text-white rounded-lg font-semibold transition-colors text-sm shadow-md">
+                            <i class="fas fa-th mr-2"></i>  <!-- ✅ Ganti icon juga -->
+                            View Cards  <!-- ✅ BARU -->
                         </a>
                     </div>
                 </div>

@@ -218,16 +218,6 @@
                     </a>
                 </li>
 
-                <!-- Reports -->
-                <li>
-                    <a href="{{ route('teamlead.reports.index') }}"
-                       class="flex items-center space-x-3 px-4 py-3 rounded-xl transition-all duration-200
-                              text-white/70 hover:bg-white/10 hover:text-white">
-                        <i class="fas fa-chart-pie text-lg w-5 text-center"></i>
-                        <span x-show="!collapsed" x-transition class="font-medium">Reports</span>
-                    </a>
-                </li>
-
                 <!-- Settings -->
                 <li>
                     <a href="{{ route('admin.settings') }}"
@@ -238,6 +228,21 @@
                         <i class="fas fa-cog text-lg w-5 text-center"></i>
                         <span x-show="!collapsed" x-transition class="font-medium">Settings</span>
                         @if(request()->routeIs('admin.settings'))
+                            <span class="absolute right-3 w-2 h-2 bg-white rounded-full animate-ping"></span>
+                        @endif
+                    </a>
+                </li>
+
+                <!-- Reports (ADMIN ONLY) -->
+                <li>
+                    <a href="{{ route('admin.reports.index') }}"
+                    class="flex items-center space-x-3 px-4 py-3 rounded-xl transition-all duration-200 relative
+                        {{ request()->routeIs('admin.reports.*')
+                            ? 'bg-gradient-to-r from-purple-500 via-blue-500 to-teal-400 text-white shadow-lg'
+                            : 'text-white/70 hover:bg-white/10 hover:text-white' }}">
+                        <i class="fas fa-file-alt text-lg w-5 text-center"></i>
+                        <span x-show="!collapsed" x-transition class="font-medium">Reports</span>
+                        @if(request()->routeIs('admin.reports.*'))
                             <span class="absolute right-3 w-2 h-2 bg-white rounded-full animate-ping"></span>
                         @endif
                     </a>
@@ -260,6 +265,7 @@
                         </button>
                     </form>
                 </li>
+
             </ul>
         </nav>
 

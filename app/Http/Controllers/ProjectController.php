@@ -10,6 +10,8 @@ use App\Models\Card;
 use App\Models\User;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
 
 class ProjectController extends Controller
 {
@@ -39,14 +41,14 @@ class ProjectController extends Controller
      */
     public function manajemen_projects()
     {
-        // My Projects (created by current user)
+        // ✅ FIXED: members.user → members
         $myProjects = Project::where('created_by', Auth::id())
-            ->with(['boards.cards', 'members.user', 'creator'])
+            ->with(['boards.cards', 'members', 'creator'])
             ->latest()
             ->get();
 
-        // All Projects (paginated)
-        $allProjects = Project::with(['boards.cards', 'members.user', 'creator'])
+        // ✅ FIXED: members.user → members
+        $allProjects = Project::with(['boards.cards', 'members', 'creator'])
             ->latest()
             ->paginate(15);
 
@@ -58,10 +60,8 @@ class ProjectController extends Controller
      */
     public function adminDashboard()
     {
-        // Ambil semua proyek beserta board dan member-nya
-        $projects = Project::with(['boards.cards', 'members.user'])->get();
+        $projects = Project::with(['boards.cards', 'members'])->get();
 
-        // ✅ HITUNG STATISTIK DASHBOARD
         $totalAllTasks = $projects->sum(function($project) {
             return $project->boards->flatMap->cards->count();
         });
@@ -76,16 +76,15 @@ class ProjectController extends Controller
             return $project->boards->flatMap->cards->whereIn('status', ['todo', 'in_progress', 'review'])->count();
         });
 
+        // ✅ FIXED: unique('user_id') → unique('id')
         $teamMembers = $projects->flatMap(function($project) {
             return $project->members;
-        })->unique('user_id')->count();
+        })->unique('id')->count();
 
-        // ✅ PERBAIKI: Hitung progress dengan approach yang lebih aman
         $projects->each(function ($project) {
             $totalCards = $project->boards->flatMap->cards->count();
             $doneCards = $project->boards->flatMap->cards->where('status', 'done')->count();
 
-            // ✅ GUNAKAN computed_data array untuk hindari undefined property warning
             $project->computed_data = [
                 'progress' => $totalCards > 0 ? round(($doneCards / $totalCards) * 100) : 0,
                 'status' => $this->determineProjectStatus($totalCards, $doneCards),
@@ -94,143 +93,117 @@ class ProjectController extends Controller
             ];
         });
 
-         // Get today's tasks
         $todayTasks = $this->getTodayTasks();
-
-        // Get calendar days
         $calendarDays = $this->getCalendarDays();
-
-        // Get timeline data
         $timelineData = $this->getTimelineData();
-
-        // return view('admin.content', [
-        //     'todayTasks' => $todayTasks,
-        //     'calendarDays' => $calendarDays,
-        //     'timelineData' => $timelineData,
-        // ]);
-
-        // ✅ TAMBAHAN BARU: Ambil semua users dari database
-        $users = User::select('id', 'username', 'full_name', 'email', 'role', 'avatar')
+        
+        // ✅ FIXED: select() dengan array
+        $users = User::select(['id', 'username', 'full_name', 'email', 'role', 'avatar'])
             ->orderBy('full_name')
             ->get();
 
-        // ✅ PERUBAHAN: Tambahkan 'users' ke compact
         return view('admin.dashboard', compact('projects', 'rate', 'activeTasks', 'teamMembers', 'todayTasks', 'calendarDays', 'timelineData', 'users'));
     }
 
     /**
-	 * API untuk mendapatkan time logs user per bulan
-	 */
-	public function getTimeLogsCalendar(Request $request)
-	{
-		$year = $request->input('year', date('Y'));
-		$month = $request->input('month', date('m'));
-		$userId = $request->input('user_id', Auth::id()); // Ambil dari request atau current user
+     * API untuk mendapatkan time logs user per bulan
+     */
+    public function getTimeLogsCalendar(Request $request)
+    {
+        $year = $request->input('year', date('Y'));
+        $month = $request->input('month', date('m'));
+        $userId = $request->input('user_id', Auth::id());
 
-		// Ambil semua time_logs user di bulan tersebut
-		$timeLogs = \App\Models\TimeLog::where('user_id', $userId)
-			->whereYear('start_time', $year)
-			->whereMonth('start_time', $month)
-			->selectRaw('DATE(start_time) as date, COUNT(*) as count, SUM(duration_minutes) as total_minutes')
-			->groupBy('date')
-			->get()
-			->keyBy('date');
+        $timeLogs = \App\Models\TimeLog::where('user_id', $userId)
+            ->whereYear('start_time', $year)
+            ->whereMonth('start_time', $month)
+            ->selectRaw('DATE(start_time) as date, COUNT(*) as count, SUM(duration_minutes) as total_minutes')
+            ->groupBy('date')
+            ->get()
+            ->keyBy('date');
 
-		// Ambil info user
-		$user = User::find($userId); // ✅ PERBAIKAN: Gunakan User tanpa backslash
+        $user = User::find($userId);
 
-		// Format response
-		$result = [];
-		$daysInMonth = cal_days_in_month(CAL_GREGORIAN, $month, $year);
+        $result = [];
+        $daysInMonth = cal_days_in_month(CAL_GREGORIAN, $month, $year);
 
-		for ($day = 1; $day <= $daysInMonth; $day++) {
-			$date = sprintf('%04d-%02d-%02d', $year, $month, $day);
-			$hasWork = isset($timeLogs[$date]);
+        for ($day = 1; $day <= $daysInMonth; $day++) {
+            $date = sprintf('%04d-%02d-%02d', $year, $month, $day);
+            $hasWork = isset($timeLogs[$date]);
 
-			$result[$date] = [
-				'has_work' => $hasWork,
-				'count' => $hasWork ? $timeLogs[$date]->count : 0,
-				'total_minutes' => $hasWork ? $timeLogs[$date]->total_minutes : 0,
-				'total_hours' => $hasWork ? round($timeLogs[$date]->total_minutes / 60, 1) : 0
-			];
-		}
+            $result[$date] = [
+                'has_work' => $hasWork,
+                'count' => $hasWork ? $timeLogs[$date]->count : 0,
+                'total_minutes' => $hasWork ? $timeLogs[$date]->total_minutes : 0,
+                'total_hours' => $hasWork ? round($timeLogs[$date]->total_minutes / 60, 1) : 0
+            ];
+        }
 
-		return response()->json([
-			'success' => true,
-			'year' => $year,
-			'month' => $month,
-			'user' => [
-				'id' => $user->id,
-				'name' => $user->full_name ?? $user->username,
-				'role' => $user->role
-			],
-			'data' => $result
-		]);
-	}
+        return response()->json([
+            'success' => true,
+            'year' => $year,
+            'month' => $month,
+            'user' => [
+                'id' => $user->id,
+                'name' => $user->full_name ?? $user->username,
+                'role' => $user->role
+            ],
+            'data' => $result
+        ]);
+    }
 
+    /**
+     * ✅ FIXED: All projects page
+     */
     public function allprojects()
-{
-    // Ambil semua proyek beserta board dan member-nya
-    $projects = Project::with(['boards.cards', 'members.user'])->get();
+    {
+        // ✅ FIXED: members.user → members
+        $projects = Project::with(['boards.cards', 'members'])->get();
 
-    // ✅ HITUNG STATISTIK DASHBOARD
-    $totalAllTasks = $projects->sum(function($project) {
-        return $project->boards->flatMap->cards->count();
-    });
+        $totalAllTasks = $projects->sum(function($project) {
+            return $project->boards->flatMap->cards->count();
+        });
 
-    $completedAllTasks = $projects->sum(function($project) {
-        return $project->boards->flatMap->cards->where('status', 'done')->count();
-    });
+        $completedAllTasks = $projects->sum(function($project) {
+            return $project->boards->flatMap->cards->where('status', 'done')->count();
+        });
 
-    $rate = $totalAllTasks > 0 ? round(($completedAllTasks / $totalAllTasks) * 100) : 0;
+        $rate = $totalAllTasks > 0 ? round(($completedAllTasks / $totalAllTasks) * 100) : 0;
 
-    $activeTasks = $projects->sum(function($project) {
-        return $project->boards->flatMap->cards->whereIn('status', ['todo', 'in_progress', 'review'])->count();
-    });
+        $activeTasks = $projects->sum(function($project) {
+            return $project->boards->flatMap->cards->whereIn('status', ['todo', 'in_progress', 'review'])->count();
+        });
 
-    // ✅ PERBAIKAN: Ambil semua users dari database (BUKAN dari project members)
-    $allUsers = User::select('id', 'username', 'full_name', 'email', 'role', 'phone', 'avatar')
-        ->orderBy('full_name')
-        ->get();
+        // ✅ FIXED: select() dengan array
+        $allUsers = User::select(['id', 'username', 'full_name', 'email', 'role', 'phone', 'avatar'])
+            ->orderBy('full_name')
+            ->get();
 
-    $teamMembers = $allUsers->count();
+        $teamMembers = $allUsers->count();
 
-    // ✅ PERBAIKI: Hitung progress dengan approach yang lebih aman
-    $projects->each(function ($project) {
-        $totalCards = $project->boards->flatMap->cards->count();
-        $doneCards = $project->boards->flatMap->cards->where('status', 'done')->count();
+        $projects->each(function ($project) {
+            $totalCards = $project->boards->flatMap->cards->count();
+            $doneCards = $project->boards->flatMap->cards->where('status', 'done')->count();
 
-        // ✅ GUNAKAN computed_data array untuk hindari undefined property warning
-        $project->computed_data = [
-            'progress' => $totalCards > 0 ? round(($doneCards / $totalCards) * 100) : 0,
-            'status' => $this->determineProjectStatus($totalCards, $doneCards),
-            'total_cards' => $totalCards,
-            'done_cards' => $doneCards
-        ];
-    });
+            $project->computed_data = [
+                'progress' => $totalCards > 0 ? round(($doneCards / $totalCards) * 100) : 0,
+                'status' => $this->determineProjectStatus($totalCards, $doneCards),
+                'total_cards' => $totalCards,
+                'done_cards' => $doneCards
+            ];
+        });
 
-    // Get today's tasks
-    $todayTasks = $this->getTodayTasks();
+        $todayTasks = $this->getTodayTasks();
+        $calendarDays = $this->getCalendarDays();
+        $timelineData = $this->getTimelineData();
 
-    // Get calendar days
-    $calendarDays = $this->getCalendarDays();
-
-    // Get timeline data
-    $timelineData = $this->getTimelineData();
-
-    // ✅ RETURN dengan allUsers
-    return view('admin.allprojects', compact('projects', 'rate', 'activeTasks', 'teamMembers', 'todayTasks', 'calendarDays', 'timelineData', 'allUsers'));
-}
+        return view('admin.allprojects', compact('projects', 'rate', 'activeTasks', 'teamMembers', 'todayTasks', 'calendarDays', 'timelineData', 'allUsers'));
+    }
 
     public function app()
-        {
-        // Get today's tasks
+    {
         $todayTasks = $this->getTodayTasks();
-
-        // Get calendar days
         $calendarDays = $this->getCalendarDays();
-
-        // Get timeline data
         $timelineData = $this->getTimelineData();
 
         return view('admin.content', [
@@ -241,82 +214,51 @@ class ProjectController extends Controller
     }
 
     /**
-     * Get today's tasks from projects
+     * ✅ FIXED: Get today tasks
      */
-    // private function getTodayTasks()
-    // {
-    //     $projects = Project::with(['boards.cards', 'members'])
-    //         ->where('created_by', Auth::id())
-    //         ->orWhereHas('members', function($q) {
-    //             $q->where('user_id', Auth::id());
-    //         })
-    //         ->get();
+    private function getTodayTasks()
+    {
+        $projects = Project::with([
+            'boards.cards.assignments.user', // ✅ FIXED
+            'members'
+        ])
+        ->where('created_by', Auth::id())
+        ->orWhereHas('members', function($q) {
+            $q->where('user_id', Auth::id());
+        })
+        ->get();
 
-    //     $tasks = [];
-    //     foreach ($projects as $project) {
-    //         foreach ($project->boards as $board) {
-    //             foreach ($board->cards->take(2) as $card) {
-    //                 $progress = rand(30, 100);
-    //                 $tasks[] = [
-    //                     'id' => $card->id,
-    //                     'title' => $card->title ?? 'Untitled Task',
-    //                     'description' => $card->description ?? 'No description',
-    //                     'progress' => $progress,
-    //                     'members' => ['John', 'Jane', 'Bob'],
-    //                     'status' => $card->status ?? 'todo'
-    //                 ];
-    //             }
-    //         }
-    //     }
+        $tasks = [];
 
-    //     return array_slice($tasks, 0, 2);
-    // }
+        foreach ($projects as $project) {
+            foreach ($project->boards as $board) {
+                foreach ($board->cards->take(2) as $card) {
+                    // ✅ FIXED: assignments instead of assignedUsers
+                    if ($card->relationLoaded('assignments') && $card->assignments->count() > 0) {
+                        $members = $card->assignments->map(function($assignment) {
+                            return $assignment->user->full_name ?? $assignment->user->username;
+                        })->toArray();
+                    } else {
+                        $members = $project->members->map(function($member) {
+                            return $member->full_name ?? $member->username;
+                        })->toArray();
+                    }
 
-    private function gettodaytasks()
-	{
-		$projects = Project::with([
-			'boards.cards.assignedUsers',   // relasi baru pada Card
-			'members'                       // relasi baru pada Project
-		])
-		->where('created_by', Auth::id())
-		->orWhereHas('members', function($q) {
-			$q->where('user_id', Auth::id());
-		})
-		->get();
+                    $tasks[] = [
+                        'id' => $card->id,
+                        'title' => $card->card_title ?? 'Untitled Task',
+                        'description' => $card->description ?? 'No description',
+                        'progress' => rand(30, 100),
+                        'members' => $members,
+                        'status' => $card->status ?? 'todo'
+                    ];
+                }
+            }
+        }
 
-		$tasks = [];
+        return array_slice($tasks, 0, 2);
+    }
 
-		foreach ($projects as $project) {
-			foreach ($project->boards as $board) {
-				foreach ($board->cards->take(2) as $card) {
-
-					// ✅ Ambil assigned users, jika ada
-					if ($card->assignedUsers->count() > 0) {
-						$members = $card->assignedUsers->pluck('full_name')->toArray();
-					}
-					// ✅ Jika tidak ada assignment → gunakan member project
-					else {
-						$members = $project->members->pluck('full_name')->toArray();
-					}
-
-					$tasks[] = [
-						'id' => $card->id,
-						'title' => $card->card_title ?? 'Untitled Task',
-						'description' => $card->description ?? 'No description',
-						'progress' => rand(30, 100),
-						'members' => $members,        // ✅ sudah real dari DB
-						'status' => $card->status ?? 'todo'
-					];
-				}
-			}
-		}
-
-		return array_slice($tasks, 0, 2);
-	}
-
-    /**
-     * Get calendar days for current month
-     */
     private function getCalendarDays()
     {
         $now = now();
@@ -325,7 +267,6 @@ class ProjectController extends Controller
 
         $days = [];
 
-        // Add previous month's days
         $startingDayOfWeek = $firstDay->dayOfWeek;
         if ($startingDayOfWeek > 0) {
             $prevMonth = $firstDay->copy()->subDay();
@@ -340,7 +281,6 @@ class ProjectController extends Controller
             }
         }
 
-        // Add current month's days
         for ($day = 1; $day <= $lastDay->day; $day++) {
             $date = $now->copy()->setDay($day);
             $isToday = $date->isToday();
@@ -354,7 +294,6 @@ class ProjectController extends Controller
             ];
         }
 
-        // Add next month's days
         $remainingDays = 42 - count($days);
         for ($i = 1; $i <= $remainingDays; $i++) {
             $days[] = [
@@ -369,68 +308,16 @@ class ProjectController extends Controller
         return $days;
     }
 
-    /**
-     * Get timeline data for tasks
-     */
     private function getTimelineData()
     {
         return [
-            [
-                'id' => 'interview',
-                'title' => 'Interview',
-                'date' => '12',
-                'height' => 80,
-                'color' => '#FF7F50',
-                'color-class' => 'orange-500'
-            ],
-            [
-                'id' => 'ideate',
-                'title' => 'Ideate',
-                'date' => '13',
-                'height' => 65,
-                'color' => '#10B981',
-                'color-class' => 'teal-500'
-            ],
-            [
-                'id' => 'wireframe',
-                'title' => 'Wireframe',
-                'date' => '14',
-                'height' => 55,
-                'color' => '#7C3AED',
-                'color-class' => 'purple-500'
-            ],
-            [
-                'id' => 'design',
-                'title' => 'Design',
-                'date' => '15',
-                'height' => 75,
-                'color' => '#3B82F6',
-                'color-class' => 'blue-500'
-            ],
-            [
-                'id' => 'develop',
-                'title' => 'Develop',
-                'date' => '16',
-                'height' => 90,
-                'color' => '#1E293B',
-                'color-class' => 'gray-900'
-            ],
-            [
-                'id' => 'test',
-                'title' => 'Test',
-                'date' => '17',
-                'height' => 70,
-                'color' => '#10B981',
-                'color-class' => 'teal-500'
-            ],
-            [
-                'id' => 'deploy',
-                'title' => 'Deploy',
-                'date' => '18',
-                'height' => 85,
-                'color' => '#FF7F50',
-                'color-class' => 'orange-500'
-            ],
+            ['id' => 'interview', 'title' => 'Interview', 'date' => '12', 'height' => 80, 'color' => '#FF7F50', 'color-class' => 'orange-500'],
+            ['id' => 'ideate', 'title' => 'Ideate', 'date' => '13', 'height' => 65, 'color' => '#10B981', 'color-class' => 'teal-500'],
+            ['id' => 'wireframe', 'title' => 'Wireframe', 'date' => '14', 'height' => 55, 'color' => '#7C3AED', 'color-class' => 'purple-500'],
+            ['id' => 'design', 'title' => 'Design', 'date' => '15', 'height' => 75, 'color' => '#3B82F6', 'color-class' => 'blue-500'],
+            ['id' => 'develop', 'title' => 'Develop', 'date' => '16', 'height' => 90, 'color' => '#1E293B', 'color-class' => 'gray-900'],
+            ['id' => 'test', 'title' => 'Test', 'date' => '17', 'height' => 70, 'color' => '#10B981', 'color-class' => 'teal-500'],
+            ['id' => 'deploy', 'title' => 'Deploy', 'date' => '18', 'height' => 85, 'color' => '#FF7F50', 'color-class' => 'orange-500'],
         ];
     }
 
@@ -438,7 +325,6 @@ class ProjectController extends Controller
     {
         $user = Auth::user();
 
-        // Get all projects where user is creator or member
         $projects = Project::with(['boards.cards', 'members', 'creator'])
             ->where('created_by', $user->id)
             ->orWhereHas('members', function($query) use ($user) {
@@ -450,12 +336,8 @@ class ProjectController extends Controller
         return view('admin.dashboard', compact('projects'));
     }
 
-    /**
-     * Display the specified project with all boards
-     */
     public function showproject(Project $project)
     {
-        // Load project with relationships
         $project->load([
             'boards.cards',
             'members',
@@ -468,104 +350,116 @@ class ProjectController extends Controller
     /**
      * ================= ADMIN CRUD PROJECT =================
      */
+    
     public function create()
     {
         $this->authorizeRole('admin');
-        return view('admin.projects.create');
+        
+        // ✅ FIXED: select() dengan array
+        $teamLeads = User::where('role', 'teamlead')
+            ->select(['id', 'username', 'full_name', 'email'])
+            ->orderBy('full_name')
+            ->get();
+        
+        return view('admin.projects.create', compact('teamLeads'));
     }
 
-   public function store(Request $request)
-{
-    $this->authorizeRole('admin');
+    public function store(Request $request)
+    {
+        $this->authorizeRole('admin');
 
-    // ✅ VALIDASI yang lebih ketat
-    $validated = $request->validate([
-        'project_name' => 'required|string|max:255|unique:projects,project_name',
-        'description'  => 'nullable|string|max:1000',
-        'thumbnail'    => 'nullable|image|mimes:jpeg,png,jpg,webp|max:2048',
-        'deadline'     => 'nullable|date|after_or_equal:today',
-    ], [
-        'project_name.required' => 'Nama project harus diisi',
-        'project_name.unique'   => 'Nama project sudah digunakan',
-        'thumbnail.image'       => 'File harus berupa gambar',
-        'thumbnail.max'         => 'Ukuran gambar maksimal 2MB',
-        'deadline.after_or_equal' => 'Deadline tidak boleh di masa lalu',
-    ]);
+        $validated = $request->validate([
+            'project_name' => 'required|string|max:255|unique:projects,project_name',
+            'description'  => 'nullable|string|max:1000',
+            'thumbnail'    => 'nullable|image|mimes:jpeg,png,jpg,webp|max:2048',
+            'deadline'     => 'nullable|date|after_or_equal:today',
+            'team_lead_id' => 'required|exists:users,id',
+        ], [
+            'project_name.required' => 'Nama project harus diisi',
+            'project_name.unique'   => 'Nama project sudah digunakan',
+            'team_lead_id.required' => 'Team Lead harus dipilih',
+            'team_lead_id.exists'   => 'Team Lead tidak ditemukan',
+        ]);
 
-    DB::beginTransaction();
+        DB::beginTransaction();
 
-    try {
-        // ✅ HANDLE UPLOAD THUMBNAIL dengan nama file yang lebih aman
-        $thumbnailPath = null;
-        if ($request->hasFile('thumbnail')) {
-            $file = $request->file('thumbnail');
-            $filename = time() . '_' . Str::slug($validated['project_name']) . '.' . $file->getClientOriginalExtension();
-            $thumbnailPath = $file->storeAs('project-thumbnails', $filename, 'public');
+        try {
+            $thumbnailPath = null;
+            if ($request->hasFile('thumbnail')) {
+                $file = $request->file('thumbnail');
+                $filename = time() . '_' . Str::slug($validated['project_name']) . '.' . $file->getClientOriginalExtension();
+                $thumbnailPath = $file->storeAs('project-thumbnails', $filename, 'public');
+            }
+
+            $project = Project::create([
+                'project_name' => $validated['project_name'],
+                'description'  => $validated['description'],
+                'thumbnail'    => $thumbnailPath,
+                'created_by'   => auth()->id(),
+                'deadline'     => $validated['deadline'],
+                'status'       => 'pending',
+            ]);
+
+            ProjectMember::create([
+                'project_id' => $project->id,
+                'user_id'    => auth()->id(),
+                'role'       => 'super_admin',
+                'joined_at'  => now(),
+            ]);
+
+            ProjectMember::create([
+                'project_id' => $project->id,
+                'user_id'    => $validated['team_lead_id'],
+                'role'       => 'admin',
+                'joined_at'  => now(),
+            ]);
+
+            Board::create([
+                'project_id' => $project->id,
+                'board_name' => 'To Do',
+                'description' => 'Default board',
+                'position' => 1,
+            ]);
+
+            DB::commit();
+
+            $teamLead = User::find($validated['team_lead_id']);
+
+            return redirect()
+                ->route('admin.allprojects')
+                ->with('success', '🎉 Project "' . $project->project_name . '" berhasil dibuat dan diserahkan ke ' . $teamLead->full_name);
+
+        } catch (\Exception $e) {
+            DB::rollBack();
+            
+            if (isset($thumbnailPath) && Storage::disk('public')->exists($thumbnailPath)) {
+                Storage::disk('public')->delete($thumbnailPath);
+            }
+
+            \Log::error('Failed to create project', [
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString(),
+                'user_id' => auth()->id(),
+                'data' => $request->all()
+            ]);
+
+            return redirect()
+                ->back()
+                ->withInput()
+                ->with('error', '❌ Gagal membuat project: ' . $e->getMessage());
         }
-
-        // ✅ Simpan project dengan data tervalidasi
-        $project = Project::create([
-            'project_name' => $validated['project_name'],
-            'description'  => $validated['description'] ?? null,
-            'thumbnail'    => $thumbnailPath,
-            'created_by'   => auth()->id(),
-            'deadline'     => $validated['deadline'] ?? null,
-            'status'       => 'active', // Default status
-        ]);
-
-        // ✅ Masukkan creator sebagai super_admin di project_members
-        ProjectMember::create([
-            'project_id' => $project->id,
-            'user_id'    => auth()->id(),
-            'role'       => 'super_admin',
-            'joined_at'  => now(),
-        ]);
-
-        // ✅ (Opsional) Buat board default
-        Board::create([
-            'project_id' => $project->id,
-            'board_name' => 'Main Board',
-            'created_by' => auth()->id(),
-        ]);
-
-        DB::commit();
-
-        return redirect()
-            ->route('admin.allprojects')
-            ->with('success', '🎉 Project "' . $project->project_name . '" berhasil dibuat!');
-
-    } catch (\Exception $e) {
-        DB::rollBack();
-
-        // ✅ Hapus thumbnail jika rollback terjadi
-        if (isset($thumbnailPath) && Storage::disk('public')->exists($thumbnailPath)) {
-            Storage::disk('public')->delete($thumbnailPath);
-        }
-
-        // ✅ Log error untuk debugging
-        \Log::error('Failed to create project: ' . $e->getMessage(), [
-            'user_id' => auth()->id(),
-            'request' => $request->all()
-        ]);
-
-        return redirect()
-            ->back()
-            ->withInput()
-            ->with('error', '❌ Gagal membuat project. Silakan coba lagi.');
     }
-}
 
     public function show($project_id)
     {
         $this->authorizeRole('admin');
 
-        $project = Project::with(['boards.cards', 'members.user'])->findOrFail($project_id);
+        // ✅ FIXED: members.user → members
+        $project = Project::with(['boards.cards', 'members'])->findOrFail($project_id);
+        $project->load(['creator', 'members']);
 
-        // Load relationships
-        $project->load(['creator', 'members.user']);
-
-        // Get users who are not already members of this project
-        $existingMemberIds = $project->members->pluck('user_id')->toArray();
+        // ✅ FIXED: pluck('user_id') → pluck('id')
+        $existingMemberIds = $project->members->pluck('id')->toArray();
         $availableUsers = User::whereNotIn('id', $existingMemberIds)->get();
 
         return view('admin.projects.show', compact('project', 'availableUsers'));
@@ -578,55 +472,49 @@ class ProjectController extends Controller
         return view('admin.projects.edit', compact('project'));
     }
 
-   public function update(Request $request, $project_id)
-{
-    $this->authorizeRole('admin');
+    public function update(Request $request, $project_id)
+    {
+        $this->authorizeRole('admin');
 
-    // ✅ VALIDASI dengan deadline minimal hari ini
-    $request->validate([
-        'project_name' => 'required|string|max:255',
-        'description'  => 'nullable|string',
-        'thumbnail'    => 'nullable|image|mimes:jpeg,png,jpg,gif|max:2048',
-        'deadline'     => 'nullable|date|after_or_equal:today', // ✅ TAMBAHAN INI
-    ]);
+        $request->validate([
+            'project_name' => 'required|string|max:255',
+            'description'  => 'nullable|string',
+            'thumbnail'    => 'nullable|image|mimes:jpeg,png,jpg,gif|max:2048',
+            'deadline'     => 'nullable|date|after_or_equal:today',
+        ]);
 
-    try {
-        $project = Project::findOrFail($project_id);
+        try {
+            $project = Project::findOrFail($project_id);
 
-        // ✅ HANDLE UPLOAD THUMBNAIL BARU
-        if ($request->hasFile('thumbnail')) {
-            // Hapus thumbnail lama jika ada
-            if ($project->thumbnail) {
-                Storage::disk('public')->delete($project->thumbnail);
+            if ($request->hasFile('thumbnail')) {
+                if ($project->thumbnail) {
+                    Storage::disk('public')->delete($project->thumbnail);
+                }
+
+                $thumbnailPath = $request->file('thumbnail')->store('project-thumbnails', 'public');
+
+                $project->update([
+                    'project_name' => $request->project_name,
+                    'description'  => $request->description,
+                    'thumbnail'    => $thumbnailPath,
+                    'deadline'     => $request->deadline,
+                ]);
+            } else {
+                $project->update([
+                    'project_name' => $request->project_name,
+                    'description'  => $request->description,
+                    'deadline'     => $request->deadline,
+                ]);
             }
 
-            // Upload thumbnail baru
-            $thumbnailPath = $request->file('thumbnail')->store('project-thumbnails', 'public');
+            return redirect()->route('admin.projects.showproject', [$project_id])->with('success', 'Project berhasil diperbarui!');
 
-            $project->update([
-                'project_name' => $request->project_name,
-                'description'  => $request->description,
-                'thumbnail'    => $thumbnailPath,
-                'deadline'     => $request->deadline,
-            ]);
-        } else {
-            // Update tanpa mengubah thumbnail
-            $project->update([
-                'project_name' => $request->project_name,
-                'description'  => $request->description,
-                'deadline'     => $request->deadline,
-            ]);
+        } catch (\Exception $e) {
+            return redirect()->back()
+                           ->withInput()
+                           ->with('error', 'Gagal memperbarui project: ' . $e->getMessage());
         }
-
-        return redirect()->route('admin.projects.showproject', [$project_id])->with('success', 'Project berhasil diperbarui!');
-        // return redirect()->route('admin.monitoring.show', [$project_id])->with('success', 'Project berhasil diperbarui!');
-
-    } catch (\Exception $e) {
-        return redirect()->back()
-                       ->withInput()
-                       ->with('error', 'Gagal memperbarui project: ' . $e->getMessage());
     }
-}
 
     public function destroy($project_id)
     {
@@ -635,7 +523,6 @@ class ProjectController extends Controller
         try {
             $project = Project::findOrFail($project_id);
 
-            // ✅ HAPUS THUMBNAIL SEBELUM HAPUS PROJECT
             if ($project->thumbnail) {
                 Storage::disk('public')->delete($project->thumbnail);
             }
@@ -678,17 +565,17 @@ class ProjectController extends Controller
     {
         $userId = auth()->id();
 
+        // ✅ FIXED: members.user → members
         $projects = Project::whereHas('members', function ($q) use ($userId) {
             $q->where('user_id', $userId)
-              ->whereIn('role', ['admin', 'teamlead']);
-        })->with(['boards.cards', 'members.user'])->get();
+              ->whereIn('role', ['admin', 'super_admin']);
+        })->with(['boards.cards', 'members'])->get();
 
-        // ✅ TAMBAHAN BARU: Ambil semua users untuk team lead dashboard
-        $users = User::select('id', 'username', 'full_name', 'email', 'role', 'avatar')
+        // ✅ FIXED: select() dengan array
+        $users = User::select(['id', 'username', 'full_name', 'email', 'role', 'avatar'])
             ->orderBy('full_name')
             ->get();
 
-        // ✅ PERUBAHAN: Tambahkan 'users' ke compact
         return view('teamlead.dashboard', compact('projects', 'users'));
     }
 
@@ -696,10 +583,11 @@ class ProjectController extends Controller
     {
         $userId = auth()->id();
 
+        // ✅ FIXED: members.user → members
         $project = Project::whereHas('members', function ($q) use ($userId) {
             $q->where('user_id', $userId)
-              ->whereIn('role', ['admin', 'teamlead']);
-        })->with(['boards.cards', 'members.user'])->findOrFail($project_id);
+              ->whereIn('role', ['admin', 'super_admin']);
+        })->with(['boards.cards', 'members'])->findOrFail($project_id);
 
         return view('teamlead.projects.show', compact('project'));
     }
@@ -729,7 +617,7 @@ class ProjectController extends Controller
             $q->where('user_id', $userId);
         })->with(['board.project'])->get();
 
-        return view('designer.dashboard', compact('cards'));
+        return view('developer.dashboard', compact('cards'));
     }
 
     /**
@@ -742,9 +630,6 @@ class ProjectController extends Controller
         }
     }
 
-    /**
-     * ✅ Helper method untuk menentukan status project
-     */
     private function determineProjectStatus($totalCards, $doneCards)
     {
         if ($totalCards === 0) {

@@ -1635,303 +1635,189 @@
 				</div> --}}
 
 				<div class="space-y-8" x-data="dashboard()">
-					<!-- Grid Layout: Left (Tasks & Notification) + Right (Calendar) -->
-					<div class="grid grid-cols-3 gap-8">
-						<!-- Left Column: Today Tasks & Notification -->
-						<div class="col-span-2 space-y-6">
-							<!-- Today Tasks Section -->
-							<div class="bg-white rounded-2xl p-6 shadow-sm border border-gray-100">
-								<div class="flex items-center justify-between mb-6">
-									<div class="flex items-center space-x-2">
-										<i class="fas fa-calendar-check text-indigo-600 text-lg"></i>
-										<h3 class="text-lg font-bold text-gray-900">Today Tasks</h3>
-									</div>
-									{{-- <a href="#" class="text-sm font-semibold text-indigo-600 hover:text-indigo-700 flex items-center space-x-1">
-										<span>See All</span>
-										<i class="fas fa-chevron-right text-xs"></i>
-									</a> --}}
-								</div>
+                <!-- Grid Layout: Left (Calendar) + Right (Today Tasks) -->
+                <div class="grid grid-cols-12 gap-8">
+                    <!-- Left Column: Calendar (4 kolom) -->
+                    <div class="col-span-4">
+                        <div class="bg-white rounded-2xl p-6 shadow-sm border border-gray-100" x-data="calendarWidget()">
+                            <div class="flex items-center justify-between mb-6">
+                                <div class="flex items-center space-x-2">
+                                    <i class="fas fa-calendar text-indigo-600 text-lg"></i>
+                                    <h3 class="text-lg font-bold text-gray-900">Calendar</h3>
+                                </div>
 
-								<!-- Tasks Cards Grid -->
-								<div class="grid grid-cols-2 gap-4 mb-6">
-									@forelse($todayTasks as $task)
-										<div class="task-card bg-gradient-to-br from-gray-50 to-white border border-gray-100 rounded-xl p-5 hover:shadow-lg transition-all">
-											<div class="flex items-start justify-between mb-3">
-												<div class="flex-1">
-													<h4 class="font-semibold text-gray-900 text-sm">{{ $task['title'] }}</h4>
-													<p class="text-xs text-gray-500 mt-1 line-clamp-2">{{ $task['description'] }}</p>
-												</div>
-												<button class="p-1 hover:bg-gray-100 rounded transition">
-													<i class="fas fa-ellipsis-h text-gray-400 text-xs"></i>
-												</button>
-											</div>
+                                <!-- User Selection Dropdown -->
+                                <div class="relative" x-data="{ open: false }">
+                                    <button @click="open = !open"
+                                            class="flex items-center space-x-2 px-3 py-2 hover:bg-gray-50 rounded-lg transition text-sm text-gray-600 border border-gray-200">
+                                        <i class="fas fa-user text-xs"></i>
+                                        <span x-text="selectedUserName" class="truncate max-w-[80px]"></span>
+                                        <i class="fas fa-chevron-down text-xs"></i>
+                                    </button>
 
-											<!-- Team Members Avatars -->
-											<div class="flex items-center justify-between mt-4 pt-4 border-t border-gray-100">
-												<div class="flex -space-x-2">
-													@foreach($task['members'] as $member)
-														<img src="https://i.pravatar.cc/150?img={{ $loop->index }}"
-															 alt="{{ $member }}"
-															 class="w-6 h-6 rounded-full border-2 border-white"
-															 title="{{ $member }}">
-													@endforeach
-													@if(count($task['members']) > 2)
-														<div class="w-6 h-6 rounded-full bg-gray-200 border-2 border-white flex items-center justify-center text-xs font-semibold text-gray-600">
-															+{{ count($task['members']) - 2 }}
-														</div>
-													@endif
-												</div>
+                                    <div x-show="open"
+                                        @click.away="open = false"
+                                        x-transition
+                                        class="absolute right-0 mt-2 w-56 bg-white rounded-lg shadow-xl border border-gray-200 py-2 z-50 max-h-64 overflow-y-auto"
+                                        style="display: none;">
+                                        @foreach($users as $user)
+                                        <button @click="selectUser({{ $user->id }}, '{{ $user->full_name ?? $user->username }}'); open = false"
+                                                class="w-full text-left px-4 py-2 hover:bg-indigo-50 transition text-sm flex items-center justify-between">
+                                            <div>
+                                                <p class="font-medium text-gray-900">{{ $user->full_name ?? $user->username }}</p>
+                                                <p class="text-xs text-gray-500">{{ ucfirst($user->role) }}</p>
+                                            </div>
+                                            <span x-show="selectedUserId === {{ $user->id }}" class="text-indigo-600">
+                                                <i class="fas fa-check"></i>
+                                            </span>
+                                        </button>
+                                        @endforeach
+                                    </div>
+                                </div>
+                            </div>
 
-												<!-- Progress -->
-												<div class="text-right">
-													<p class="text-xs font-semibold text-gray-600">{{ $task['progress'] }}%</p>
-												</div>
-											</div>
+                            <!-- Calendar Navigation -->
+                            <div class="flex items-center justify-between mb-4">
+                                <button @click="prevMonth()" class="p-2 hover:bg-gray-100 rounded-lg transition">
+                                    <i class="fas fa-chevron-left text-gray-600"></i>
+                                </button>
+                                <p class="text-sm font-semibold text-gray-900" x-text="currentMonth"></p>
+                                <button @click="nextMonth()" class="p-2 hover:bg-gray-100 rounded-lg transition">
+                                    <i class="fas fa-chevron-right text-gray-600"></i>
+                                </button>
+                            </div>
 
-											<!-- Progress Bar -->
-											<div class="w-full h-2 bg-gray-200 rounded-full mt-3 overflow-hidden">
-												<div class="h-full {{ $task['progress'] >= 80 ? 'bg-teal-500' : ($task['progress'] >= 50 ? 'bg-indigo-500' : 'bg-orange-500') }} progress-bar transition-all duration-1000"
-													 :style="{ width: '{{ $task['progress'] }}%' }"></div>
-											</div>
-										</div>
-									@empty
-										<div class="col-span-2 bg-gray-50 rounded-xl p-8 text-center">
-											<i class="fas fa-inbox text-gray-300 text-4xl mb-3"></i>
-											<p class="text-gray-500 text-sm">No tasks for today</p>
-										</div>
-									@endforelse
-								</div>
+                            <!-- Calendar Grid -->
+                            <div class="mb-6">
+                                <div class="grid grid-cols-7 gap-1 mb-2">
+                                    <template x-for="day in ['S', 'M', 'T', 'W', 'T', 'F', 'S']" :key="day">
+                                        <div class="text-center text-xs font-semibold text-gray-500 py-2" x-text="day"></div>
+                                    </template>
+                                </div>
 
-								<!-- Notification Alert -->
-								{{-- <div class="flex items-center justify-between bg-gradient-to-r from-teal-500 to-teal-600 rounded-full px-4 py-3 text-white shadow-md">
-									<div class="flex items-center space-x-3">
-										<div class="w-8 h-8 bg-white/20 rounded-full flex items-center justify-center">
-											<i class="fas fa-heart text-white text-sm"></i>
-										</div>
-										<span class="text-sm font-medium">You have 5 tasks today. Keep it up! ðŸ’ª</span>
-									</div>
-									<button class="hover:bg-white/10 p-1 rounded transition">
-										<i class="fas fa-times text-white"></i>
-									</button>
-								</div> --}}
-							</div>
+                                <div class="grid grid-cols-7 gap-1">
+                                    <template x-for="(day, index) in calendarDays" :key="index">
+                                        <div class="relative">
+                                            <button
+                                                class="calendar-day w-full aspect-square flex items-center justify-center text-sm rounded-lg transition-all"
+                                                :class="{
+                                                    'bg-indigo-600 text-white font-bold': day.isToday,
+                                                    'bg-indigo-100 text-indigo-700 font-semibold': day.isSelected && !day.isToday,
+                                                    'opacity-30 cursor-default': day.isOtherMonth,
+                                                    'hover:bg-gray-100': !day.isOtherMonth && !day.isToday && !day.isSelected,
+                                                    'ring-2 ring-green-400': !day.isOtherMonth && day.hasWork
+                                                }"
+                                                @click="!day.isOtherMonth && selectDate(day.date)"
+                                                x-text="day.day">
+                                            </button>
+                                            <!-- Work indicator dot -->
+                                            <div x-show="!day.isOtherMonth && day.hasWork"
+                                                class="absolute bottom-1 left-1/2 transform -translate-x-1/2 w-1.5 h-1.5 bg-green-500 rounded-full"
+                                                :title="`${day.workCount} sessions, ${day.totalHours}h total`">
+                                            </div>
+                                        </div>
+                                    </template>
+                                </div>
+                            </div>
 
-							<!-- Task Progress Section -->
-							<div class="bg-white rounded-2xl p-6 shadow-sm border border-gray-100">
-								<div class="flex items-center justify-between mb-6">
-									<div class="flex items-center space-x-2">
-										<i class="fas fa-chart-pie text-indigo-600 text-lg"></i>
-										<h3 class="text-lg font-bold text-gray-900">Task Progress</h3>
-									</div>
-									<button class="p-2 hover:bg-gray-50 rounded-lg transition">
-										<i class="fas fa-ellipsis-v text-gray-400"></i>
-									</button>
-								</div>
+                            <!-- Work Summary -->
+                            <div x-show="hasWorkDays" class="p-4 bg-gradient-to-br from-indigo-50 to-purple-50 rounded-xl border border-indigo-100">
+                                <div class="flex items-center justify-between text-sm mb-2">
+                                    <span class="text-gray-700 font-medium">Total Work Days:</span>
+                                    <span class="font-bold text-indigo-600" x-text="totalWorkDays"></span>
+                                </div>
+                                <div class="flex items-center justify-between text-sm">
+                                    <span class="text-gray-700 font-medium">Total Hours:</span>
+                                    <span class="font-bold text-indigo-600" x-text="totalWorkHours + 'h'"></span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
 
-								<!-- Progress Chart Container -->
-								<div class="flex items-center justify-center h-64">
-									<div class="relative w-48 h-48">
-										<!-- Center Circle with Percentage -->
-										<div class="absolute inset-0 flex flex-col items-center justify-center bg-gradient-to-br from-gray-900 to-gray-800 rounded-full">
-											<p class="text-3xl font-bold text-white">65%</p>
-											<p class="text-xs text-gray-400 mt-1">Complete</p>
-										</div>
+                    <!-- Right Column: Today Tasks (8 kolom) -->
+                    <div class="col-span-8">
+                        <div class="bg-white rounded-2xl p-6 shadow-sm border border-gray-100">
+                            <div class="flex items-center justify-between mb-6">
+                                <div class="flex items-center space-x-2">
+                                    <i class="fas fa-calendar-check text-indigo-600 text-lg"></i>
+                                    <h3 class="text-lg font-bold text-gray-900">Today Tasks</h3>
+                                </div>
+                                <span class="text-sm text-gray-500 font-medium">{{ count($todayTasks) }} tasks</span>
+                            </div>
 
-										<!-- Progress Indicators Around -->
-										<div class="absolute -top-12 left-1/2 -translate-x-1/2 bg-teal-500 text-white px-3 py-1 rounded-full text-xs font-semibold">
-											+8%
-										</div>
-										<div class="absolute top-8 -left-12 bg-orange-500 text-white px-3 py-1 rounded-full text-xs font-semibold">
-											+12%
-										</div>
-										<div class="absolute top-8 -right-12 bg-teal-500 text-white px-3 py-1 rounded-full text-xs font-semibold">
-											+6%
-										</div>
-										<div class="absolute -bottom-12 left-4 bg-gray-700 text-white px-3 py-1 rounded-full text-xs font-semibold">
-											+2%
-										</div>
-										<div class="absolute -bottom-12 right-4 bg-orange-500 text-white px-3 py-1 rounded-full text-xs font-semibold">
-											+10%
-										</div>
-									</div>
-								</div>
+                            <!-- Tasks List - Vertical Layout -->
+                            <div class="space-y-4">
+                                @forelse($todayTasks as $task)
+                                    <div class="task-card bg-gradient-to-r from-gray-50 to-white border border-gray-200 rounded-xl p-5 hover:shadow-md hover:border-indigo-200 transition-all">
+                                        <div class="flex items-start justify-between">
+                                            <div class="flex-1">
+                                                <div class="flex items-start space-x-4">
+                                                    <!-- Checkbox -->
+                                                    <div class="mt-1">
+                                                        <input type="checkbox" class="w-5 h-5 text-indigo-600 border-gray-300 rounded focus:ring-indigo-500 cursor-pointer">
+                                                    </div>
 
-								<!-- Progress Summary -->
-								<div class="grid grid-cols-2 gap-4 mt-6 pt-6 border-t border-gray-100">
-									<div class="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
-										<span class="text-sm text-gray-600">Completed</span>
-										<span class="font-bold text-gray-900">26</span>
-									</div>
-									<div class="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
-										<span class="text-sm text-gray-600">In Progress</span>
-										<span class="font-bold text-gray-900">14</span>
-									</div>
-								</div>
-							</div>
-						</div>
+                                                    <!-- Content -->
+                                                    <div class="flex-1">
+                                                        <h4 class="font-semibold text-gray-900 text-base mb-1">{{ $task['title'] }}</h4>
+                                                        <p class="text-sm text-gray-600 mb-3 line-clamp-1">{{ $task['description'] }}</p>
 
-						<!-- Right Column: Calendar -->
-						<div class="col-span-1 space-y-6">
-							<!-- Calendar Section -->
-							<div class="bg-white rounded-2xl p-6 shadow-sm border border-gray-100" x-data="calendarWidget()">
-								<div class="flex items-center justify-between mb-6">
-									<div class="flex items-center space-x-2">
-										<i class="fas fa-calendar text-indigo-600 text-lg"></i>
-										<h3 class="text-lg font-bold text-gray-900">Calendar</h3>
-									</div>
+                                                        <!-- Meta Info -->
+                                                        <div class="flex items-center space-x-6">
+                                                            <!-- Team Members -->
+                                                            <div class="flex items-center space-x-2">
+                                                                <div class="flex -space-x-2">
+                                                                    @foreach($task['members'] as $member)
+                                                                        <img src="https://i.pravatar.cc/150?img={{ $loop->index }}"
+                                                                            alt="{{ $member }}"
+                                                                            class="w-7 h-7 rounded-full border-2 border-white"
+                                                                            title="{{ $member }}">
+                                                                    @endforeach
+                                                                    @if(count($task['members']) > 3)
+                                                                        <div class="w-7 h-7 rounded-full bg-gray-200 border-2 border-white flex items-center justify-center text-xs font-semibold text-gray-600">
+                                                                            +{{ count($task['members']) - 3 }}
+                                                                        </div>
+                                                                    @endif
+                                                                </div>
+                                                            </div>
 
-									<!-- User Selection Dropdown -->
-									<div class="relative" x-data="{ open: false }">
-										<button @click="open = !open"
-												class="flex items-center space-x-2 px-3 py-1 hover:bg-gray-50 rounded-lg transition text-sm text-gray-600 border border-gray-200">
-											<i class="fas fa-user text-xs"></i>
-											<span x-text="selectedUserName"></span>
-											<i class="fas fa-chevron-down text-xs"></i>
-										</button>
+                                                            <!-- Progress Info -->
+                                                            <div class="flex items-center space-x-3">
+                                                                <div class="flex items-center space-x-2">
+                                                                    <i class="fas fa-chart-line text-gray-400 text-xs"></i>
+                                                                    <span class="text-sm font-semibold text-gray-700">{{ $task['progress'] }}%</span>
+                                                                </div>
 
-										<div x-show="open"
-											 @click.away="open = false"
-											 x-transition
-											 class="absolute right-0 mt-2 w-56 bg-white rounded-lg shadow-xl border border-gray-200 py-2 z-50 max-h-64 overflow-y-auto"
-											 style="display: none;">
-											@foreach($users as $user)
-											<button @click="selectUser({{ $user->id }}, '{{ $user->full_name ?? $user->username }}'); open = false"
-													class="w-full text-left px-4 py-2 hover:bg-indigo-50 transition text-sm flex items-center justify-between">
-												<div>
-													<p class="font-medium text-gray-900">{{ $user->full_name ?? $user->username }}</p>
-													<p class="text-xs text-gray-500">{{ ucfirst($user->role) }}</p>
-												</div>
-												<span x-show="selectedUserId === {{ $user->id }}" class="text-indigo-600">
-													<i class="fas fa-check"></i>
-												</span>
-											</button>
-											@endforeach
-										</div>
-									</div>
-								</div>
+                                                                <!-- Progress Bar -->
+                                                                <div class="w-32 h-2 bg-gray-200 rounded-full overflow-hidden">
+                                                                    <div class="h-full transition-all duration-500 {{ $task['progress'] >= 80 ? 'bg-green-500' : ($task['progress'] >= 50 ? 'bg-indigo-500' : 'bg-orange-500') }}"
+                                                                        style="width: {{ $task['progress'] }}%"></div>
+                                                                </div>
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            </div>
 
-								<!-- Calendar Navigation -->
-								<div class="flex items-center justify-between mb-4">
-									<button @click="prevMonth()" class="p-1 hover:bg-gray-100 rounded transition">
-										<i class="fas fa-chevron-left text-gray-400"></i>
-									</button>
-									<p class="text-sm font-semibold text-gray-900" x-text="currentMonth"></p>
-									<button @click="nextMonth()" class="p-1 hover:bg-gray-100 rounded transition">
-										<i class="fas fa-chevron-right text-gray-400"></i>
-									</button>
-								</div>
-
-								<!-- Calendar Grid -->
-								<div class="mb-6">
-									<div class="grid grid-cols-7 gap-2 mb-2">
-										<template x-for="day in ['S', 'M', 'T', 'W', 'T', 'F', 'S']" :key="day">
-											<div class="text-center text-xs font-semibold text-gray-500 py-2" x-text="day"></div>
-										</template>
-									</div>
-
-									<div class="grid grid-cols-7 gap-2">
-										<template x-for="(day, index) in calendarDays" :key="index">
-											<div class="relative">
-												<button
-													class="calendar-day w-full relative"
-													:class="{
-														'today': day.isToday,
-														'active': day.isSelected,
-														'opacity-30 cursor-default': day.isOtherMonth,
-														'hover:bg-gray-100': !day.isOtherMonth,
-														'bg-green-50 border-2 border-green-500': !day.isOtherMonth && day.hasWork
-													}"
-													@click="!day.isOtherMonth && selectDate(day.date)"
-													x-text="day.day">
-												</button>
-												<!-- Work indicator dot -->
-												<div x-show="!day.isOtherMonth && day.hasWork"
-													 class="absolute bottom-1 left-1/2 transform -translate-x-1/2 w-1.5 h-1.5 bg-green-500 rounded-full"
-													 :title="`${day.workCount} sessions, ${day.totalHours}h total`">
-												</div>
-											</div>
-										</template>
-									</div>
-								</div>
-
-								<!-- Work Summary -->
-								<div x-show="hasWorkDays" class="mt-4 p-3 bg-indigo-50 rounded-lg">
-									<div class="flex items-center justify-between text-sm">
-										<span class="text-gray-600">Total Work Days:</span>
-										<span class="font-bold text-indigo-600" x-text="totalWorkDays"></span>
-									</div>
-									<div class="flex items-center justify-between text-sm mt-1">
-										<span class="text-gray-600">Total Hours:</span>
-										<span class="font-bold text-indigo-600" x-text="totalWorkHours + 'h'"></span>
-									</div>
-								</div>
-							</div>
-						</div>
-					</div>
-
-					<!-- Bottom Row: Task Timeline -->
-					<div class="grid grid-cols-1 gap-8">
-						<div class="bg-white rounded-2xl p-6 shadow-sm border border-gray-100">
-							<div class="flex items-center justify-between mb-6">
-								<div class="flex items-center space-x-2">
-									<i class="fas fa-stream text-indigo-600 text-lg"></i>
-									<h3 class="text-lg font-bold text-gray-900">Task Timeline</h3>
-								</div>
-								<button class="p-2 hover:bg-gray-50 rounded-lg transition">
-									<i class="fas fa-ellipsis-v text-gray-400"></i>
-								</button>
-							</div>
-
-							<!-- Timeline Container -->
-							<div class="flex items-end justify-between h-64 bg-gradient-to-b from-gray-50 to-white rounded-xl p-8 relative">
-								<!-- Timeline Grid Lines -->
-								<div class="absolute inset-0 opacity-10">
-									@for($i = 0; $i < 7; $i++)
-										<div class="absolute w-px h-full bg-gray-300"
-											 style="left: {{ ($i + 1) * (100 / 7) }}%"></div>
-									@endfor
-								</div>
-
-								<!-- Timeline Bars -->
-								@foreach($timelineData as $item)
-									<div class="flex-1 flex flex-col items-center group relative z-10 timeline-item">
-										<!-- Timeline Bar -->
-										<div class="w-full flex items-end justify-center mb-4 h-40">
-											<div class="w-20 rounded-t-2xl timeline-bar origin-bottom"
-												 :style="{ height: 'calc({{ $item['height'] }}% * 150px / 100)', background: '{{ $item['color'] }}' }}"
-												 :title="'{{ $item['title'] }}'"
-												 @mouseenter="activeTimeline = '{{ $item['id'] }}'"
-												 @mouseleave="activeTimeline = null">
-											</div>
-										</div>
-
-										<!-- Timeline Label -->
-										<p class="text-sm font-semibold text-gray-900 text-center bg-white px-4 py-2 rounded-full border-2 transition-all duration-300"
-										   :class="{ 'border-gray-300': activeTimeline !== '{{ $item['id'] }}', 'border-{{ $item['color-class'] }}': activeTimeline === '{{ $item['id'] }}' }">
-											{{ $item['title'] }}
-										</p>
-
-										<!-- Date Label -->
-										<p class="text-xs text-gray-400 mt-2">{{ $item['date'] }}</p>
-									</div>
-								@endforeach
-
-								<!-- X-Axis -->
-								<div class="absolute bottom-0 left-0 right-0 h-px bg-gray-300"></div>
-							</div>
-
-							<!-- Timeline Legend -->
-							<div class="mt-6 grid grid-cols-4 gap-4">
-								@foreach($timelineData as $item)
-									<div class="flex items-center space-x-2">
-										<div class="w-3 h-3 rounded-full" style="background-color: {{ $item['color'] }}"></div>
-										<span class="text-xs font-medium text-gray-600">{{ $item['title'] }}</span>
-									</div>
-								@endforeach
-							</div>
-						</div>
-					</div>
-				</div>
+                                            <!-- Actions -->
+                                            <div class="ml-4">
+                                                <button class="p-2 hover:bg-gray-100 rounded-lg transition">
+                                                    <i class="fas fa-ellipsis-h text-gray-400"></i>
+                                                </button>
+                                            </div>
+                                        </div>
+                                    </div>
+                                @empty
+                                    <div class="bg-gray-50 rounded-xl p-12 text-center">
+                                        <i class="fas fa-inbox text-gray-300 text-5xl mb-4"></i>
+                                        <p class="text-gray-500 text-base font-medium">No tasks for today</p>
+                                        <p class="text-gray-400 text-sm mt-1">You're all caught up!</p>
+                                    </div>
+                                @endforelse
+                            </div>
+                        </div>
+                    </div>
+                </div>
 			</main>
         </div>
     </div>

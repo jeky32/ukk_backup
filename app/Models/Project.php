@@ -8,95 +8,167 @@ use Illuminate\Support\Facades\Storage;
 class Project extends Model
 {
     protected $primaryKey = 'id';
-    public $timestamps = false;
+
+    /**
+     * ✅ FIXED: Enable timestamps (karena tabel ada created_at & updated_at)
+     */
+    public $timestamps = true;
 
     protected $fillable = [
         'project_name',
         'description',
-        'thumbnail',      // ✅ TAMBAH INI untuk gambar project
+        'thumbnail',
         'created_by',
         'deadline',
-        'github_link', 
+        'github_link',
         'created_at',
-        'leader_id',      // ✅ Uncomment untuk project leader
-        'status'          // ✅ Uncomment untuk status project
+        'updated_at',
+        'leader_id',
+        'status'
     ];
 
-    // ✅ Cast otomatis untuk tipe data
+    /**
+     * ✅ Cast otomatis untuk tipe data
+     */
     protected $casts = [
         'deadline' => 'date',
+        'created_at' => 'datetime',
+        'updated_at' => 'datetime',
     ];
 
-    // ✅ Appends accessor ke JSON
+    /**
+     * ✅ Appends accessor ke JSON
+     */
     protected $appends = ['progress'];
 
-    // ✅ Relationship dengan members
-    public function members()
-    {
-        return $this->hasMany(ProjectMember::class, 'project_id', 'id');
-    }
+    // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    // 🔗 RELATIONSHIPS - CORE
+    // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-    // ✅ Relationship dengan boards
+    /**
+     * ✅ FIXED: Project members (via pivot table project_members)
+     * Ini yang dipake untuk many-to-many relationship
+     */
+   public function members()
+{
+    return $this->belongsToMany(User::class, 'project_members', 'project_id', 'user_id')
+        ->withPivot('role', 'joined_at') // Pivot columns
+        ->withTimestamps() // created_at & updated_at dari pivot
+        ->orderBy('project_members.joined_at', 'desc'); // ✅ TAMBAHAN: Order by join date
+}
+    /**
+     * ✅ Project boards (one-to-many)
+     */
     public function boards()
     {
         return $this->hasMany(Board::class, 'project_id', 'id');
     }
 
-    // ✅ Relationship dengan leader (user yang memimpin project)
+    /**
+     * ✅ Project leader (belongs-to)
+     */
     public function leader()
     {
         return $this->belongsTo(User::class, 'leader_id', 'id');
     }
 
-    // ✅ Relationship dengan creator (user yang membuat project)
+    /**
+     * ✅ Project creator (belongs-to)
+     */
     public function creator()
     {
         return $this->belongsTo(User::class, 'created_by', 'id');
     }
 
-    // 🔹 Relasi ke tabel pivot project_members
-    public function members2()
+    /**
+     * ✅ All cards/tasks in this project (through boards)
+     */
+    public function cards()
     {
-        return $this->belongsToMany(User::class, 'project_members')
+        return $this->hasManyThrough(
+            Card::class,
+            Board::class,
+            'project_id',
+            'board_id',
+            'id',
+            'id'
+        );
+    }
+
+    /**
+     * ✅ Alias untuk cards (backward compatibility)
+     */
+    public function tasks()
+    {
+        return $this->cards();
+    }
+
+    // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    // 🔗 RELATIONSHIPS - FILTERED MEMBERS BY ROLE
+    // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+    /**
+     * ✅ Super admin members (role = super_admin)
+     */
+    public function superAdmins()
+    {
+        return $this->belongsToMany(User::class, 'project_members', 'project_id', 'user_id')
+            ->wherePivot('role', 'super_admin')
             ->withPivot('role', 'joined_at')
             ->withTimestamps();
     }
 
-    // 🔹 Hanya ambil member dengan role 'super_admin' → creator (melalui pivot)
-    public function superAdmin()
-    {
-        return $this->belongsToMany(User::class, 'project_members')
-            ->wherePivot('role', 'super_admin');
-    }
-
-    // 🔹 Hanya ambil member dengan role 'admin' → teamlead
+    /**
+     * ✅ Team leads (role = team_lead or admin)
+     */
     public function teamLeads()
     {
-        return $this->belongsToMany(User::class, 'project_members')
-            ->wherePivot('role', 'admin');
+        return $this->belongsToMany(User::class, 'project_members', 'project_id', 'user_id')
+            ->wherePivotIn('role', ['team_lead', 'admin'])
+            ->withPivot('role', 'joined_at')
+            ->withTimestamps();
     }
 
-    // 🔹 Hanya ambil member dengan role 'member' → developer/designer
+    /**
+     * ✅ Developers (role = developer)
+     */
+    public function developers()
+    {
+        return $this->belongsToMany(User::class, 'project_members', 'project_id', 'user_id')
+            ->wherePivot('role', 'developer')
+            ->withPivot('role', 'joined_at')
+            ->withTimestamps();
+    }
+
+    /**
+     * ✅ Designers (role = designer)
+     */
+    public function designers()
+    {
+        return $this->belongsToMany(User::class, 'project_members', 'project_id', 'user_id')
+            ->wherePivot('role', 'designer')
+            ->withPivot('role', 'joined_at')
+            ->withTimestamps();
+    }
+
+    /**
+     * ✅ Team members (role = developer, designer, or member)
+     */
     public function teamMembers()
     {
-        return $this->belongsToMany(User::class, 'project_members')
-            ->wherePivot('role', 'member');
+        return $this->belongsToMany(User::class, 'project_members', 'project_id', 'user_id')
+            ->wherePivotIn('role', ['developer', 'designer', 'member'])
+            ->withPivot('role', 'joined_at')
+            ->withTimestamps();
     }
 
-    // ✅ Relationship dengan tasks melalui boards
-    public function tasks()
-    {
-        return $this->hasManyThrough(
-            Card::class,        // Model akhir (tasks/cards)
-            Board::class,       // Model perantara
-            'project_id',       // Foreign key di boards table
-            'board_id',         // Foreign key di cards table
-            'id',               // Local key di projects table
-            'id'                // Local key di boards table
-        );
-    }
+    // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    // 🎨 ACCESSORS & COMPUTED ATTRIBUTES
+    // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-    // ✅ Accessor untuk progress otomatis
+    /**
+     * ✅ Auto-calculate project progress (0-100)
+     */
     public function getProgressAttribute()
     {
         if (!$this->relationLoaded('boards')) {
@@ -109,64 +181,189 @@ class Project extends Model
         return $totalCards > 0 ? round(($doneCards / $totalCards) * 100) : 0;
     }
 
-    // ✅ Accessor untuk thumbnail URL
+    /**
+     * ✅ Get thumbnail URL
+     */
     public function getThumbnailUrlAttribute()
     {
         if ($this->thumbnail) {
             return asset('storage/' . $this->thumbnail);
         }
 
-        return null; // atau return default image
+        return null;
     }
 
-    // ✅ Accessor untuk thumbnail lengkap dengan fallback
+    /**
+     * ✅ Get thumbnail with fallback
+     */
     public function getThumbnailImageAttribute()
     {
         if ($this->thumbnail && Storage::disk('public')->exists($this->thumbnail)) {
             return asset('storage/' . $this->thumbnail);
         }
 
-        // Fallback: return gradient atau default image
         return null;
     }
 
-    // ✅ Scope untuk project ongoing
+    /**
+     * ✅ Get active members
+     */
+    public function getActiveMembersAttribute()
+    {
+        return $this->members()->whereHas('user', function($query) {
+            $query->where('is_active', true);
+        })->get();
+    }
+
+    /**
+     * ✅ Get total tasks count
+     */
+    public function getTotalTasksAttribute()
+    {
+        return $this->boards()->withCount('cards')->get()->sum('cards_count');
+    }
+
+    /**
+     * ✅ Get completed tasks count
+     */
+    public function getCompletedTasksAttribute()
+    {
+        if (!$this->relationLoaded('boards')) {
+            $this->load('boards.cards');
+        }
+
+        return $this->boards->flatMap->cards->where('status', 'done')->count();
+    }
+
+    /**
+     * ✅ Get todo tasks count
+     */
+    public function getTodoTasksAttribute()
+    {
+        if (!$this->relationLoaded('boards')) {
+            $this->load('boards.cards');
+        }
+
+        return $this->boards->flatMap->cards->where('status', 'todo')->count();
+    }
+
+    /**
+     * ✅ Get in-progress tasks count
+     */
+    public function getInProgressTasksAttribute()
+    {
+        if (!$this->relationLoaded('boards')) {
+            $this->load('boards.cards');
+        }
+
+        return $this->boards->flatMap->cards->where('status', 'in_progress')->count();
+    }
+
+    /**
+     * ✅ Get review tasks count
+     */
+    public function getReviewTasksAttribute()
+    {
+        if (!$this->relationLoaded('boards')) {
+            $this->load('boards.cards');
+        }
+
+        return $this->boards->flatMap->cards->where('status', 'review')->count();
+    }
+
+    // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    // 🔍 QUERY SCOPES
+    // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+    /**
+     * ✅ Scope for ongoing projects
+     */
     public function scopeOngoing($query)
     {
         return $query->where('status', 'ongoing');
     }
 
-    // ✅ Scope untuk project completed
+    /**
+     * ✅ Scope for completed projects
+     */
     public function scopeCompleted($query)
     {
         return $query->where('status', 'completed');
     }
 
-    // ✅ Scope untuk project dengan thumbnail
+    /**
+     * ✅ Scope for active projects
+     */
+    public function scopeActive($query)
+    {
+        return $query->whereIn('status', ['ongoing', 'active']);
+    }
+
+    /**
+     * ✅ Scope for projects with thumbnail
+     */
     public function scopeWithThumbnail($query)
     {
         return $query->whereNotNull('thumbnail');
     }
 
-    // ✅ Method untuk cek apakah project aktif
-    public function isActive()
+    /**
+     * ✅ Scope for projects created by user
+     */
+    public function scopeCreatedBy($query, $userId)
     {
-        return $this->status === 'ongoing';
+        return $query->where('created_by', $userId);
     }
 
-    // ✅ Method untuk cek apakah project completed
+    /**
+     * ✅ Scope for projects led by user
+     */
+    public function scopeLedBy($query, $userId)
+    {
+        return $query->where('leader_id', $userId);
+    }
+
+    /**
+     * ✅ Scope for projects where user is member
+     */
+    public function scopeWhereUserIsMember($query, $userId)
+    {
+        return $query->whereHas('members', function($q) use ($userId) {
+            $q->where('user_id', $userId);
+        });
+    }
+
+    // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    // 🔧 HELPER METHODS
+    // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+    /**
+     * ✅ Check if project is active
+     */
+    public function isActive()
+    {
+        return in_array($this->status, ['ongoing', 'active']);
+    }
+
+    /**
+     * ✅ Check if project is completed
+     */
     public function isCompleted()
     {
         return $this->status === 'completed';
     }
 
-    // ✅ Method untuk cek apakah ada thumbnail
+    /**
+     * ✅ Check if project has thumbnail
+     */
     public function hasThumbnail()
     {
         return !empty($this->thumbnail) && Storage::disk('public')->exists($this->thumbnail);
     }
 
-    // ✅ Method untuk hapus thumbnail
+    /**
+     * ✅ Delete thumbnail file
+     */
     public function deleteThumbnail()
     {
         if ($this->thumbnail && Storage::disk('public')->exists($this->thumbnail)) {
@@ -178,52 +375,118 @@ class Project extends Model
         return false;
     }
 
-    // ✅ Event ketika model dihapus (hapus thumbnail juga)
-    protected static function booted()
-    {
-        static::deleting(function ($project) {
-            // Hapus thumbnail saat project dihapus
-            if ($project->thumbnail) {
-                Storage::disk('public')->delete($project->thumbnail);
-            }
-        });
-    }
-
-    // ✅ Method untuk get all active members
-    public function getActiveMembersAttribute()
-    {
-        return $this->members()->whereHas('user', function($query) {
-            $query->where('is_active', true); // jika ada field is_active di users
-        })->get();
-    }
-
-    // ✅ Method untuk count total tasks
-    public function getTotalTasksAttribute()
-    {
-        return $this->boards()->withCount('cards')->get()->sum('cards_count');
-    }
-
-    // ✅ Method untuk count completed tasks
-    public function getCompletedTasksAttribute()
-    {
-        return $this->boards->flatMap->cards->where('status', 'done')->count();
-    }
-
-    // ✅ Method untuk cek apakah user adalah member
+    /**
+     * ✅ Check if user is member of this project
+     */
     public function isMember($userId)
     {
         return $this->members()->where('user_id', $userId)->exists();
     }
 
-    // ✅ Method untuk cek apakah user adalah leader
+    /**
+     * ✅ Check if user is leader of this project
+     */
     public function isLeader($userId)
     {
         return $this->leader_id == $userId;
     }
 
-    // ✅ Method untuk cek apakah user adalah creator
+    /**
+     * ✅ Check if user is creator of this project
+     */
     public function isCreator($userId)
     {
         return $this->created_by == $userId;
+    }
+
+    /**
+     * ✅ Check if user can manage this project
+     */
+    public function canManage($userId)
+    {
+        return $this->isLeader($userId) || $this->isCreator($userId);
+    }
+
+    /**
+     * ✅ Add member to project
+     */
+    public function addMember($userId, $role = 'developer')
+    {
+        if ($this->isMember($userId)) {
+            return false;
+        }
+
+        $this->members()->attach($userId, [
+            'role' => $role,
+            'joined_at' => now()
+        ]);
+
+        return true;
+    }
+
+    /**
+     * ✅ Remove member from project
+     */
+    public function removeMember($userId)
+    {
+        return $this->members()->detach($userId);
+    }
+
+    /**
+     * ✅ Update member role
+     */
+    public function updateMemberRole($userId, $role)
+    {
+        return $this->members()->updateExistingPivot($userId, [
+            'role' => $role
+        ]);
+    }
+
+    /**
+     * ✅ Get days until deadline
+     */
+    public function getDaysUntilDeadline()
+    {
+        if (!$this->deadline) {
+            return null;
+        }
+
+        return now()->diffInDays($this->deadline, false);
+    }
+
+    /**
+     * ✅ Check if deadline is overdue
+     */
+    public function isOverdue()
+    {
+        if (!$this->deadline) {
+            return false;
+        }
+
+        return now()->gt($this->deadline);
+    }
+
+    // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    // ⚙️ MODEL EVENTS
+    // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+    /**
+     * ✅ Boot method for model events
+     */
+    protected static function booted()
+    {
+        // Auto-delete thumbnail when project is deleted
+        static::deleting(function ($project) {
+            if ($project->thumbnail) {
+                Storage::disk('public')->delete($project->thumbnail);
+            }
+        });
+
+        // Set created_at if not set (when timestamps = false before)
+        static::creating(function ($project) {
+            if (!$project->created_at) {
+                $project->created_at = now();
+            }
+        });
     }
 }

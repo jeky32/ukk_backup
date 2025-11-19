@@ -11,7 +11,7 @@ use Laravel\Sanctum\HasApiTokens;
 class User extends Authenticatable
 {
     use HasFactory, Notifiable, HasApiTokens;
-    
+
     /**
      * ✅ Primary key default Laravel ('id')
      */
@@ -34,7 +34,7 @@ class User extends Authenticatable
         'current_task_status',
         'phone',
         'bio',
-        'avatar', // ✅ TAMBAHAN untuk foto profil
+        'avatar',
     ];
 
     /**
@@ -50,7 +50,7 @@ class User extends Authenticatable
      */
     protected $casts = [
         'email_verified_at' => 'datetime',
-        'password' => 'hashed', // ✅ TAMBAHAN auto-hash password Laravel 10+
+        'password' => 'hashed',
     ];
 
     /**
@@ -61,12 +61,11 @@ class User extends Authenticatable
     ];
 
     // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-    // 🔗 RELATIONSHIPS - PROFILE (TAMBAHAN BARU)
+    // 🔗 RELATIONSHIPS - PROFILE
     // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
     /**
      * ✅ USER PROFILE (One-to-One)
-     * 1 user → 1 profile
      */
     public function profile()
     {
@@ -75,7 +74,6 @@ class User extends Authenticatable
 
     /**
      * ✅ Get or create profile for this user
-     * Auto-creates profile if not exists
      */
     public function getOrCreateProfile()
     {
@@ -95,16 +93,7 @@ class User extends Authenticatable
     // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
     /**
-     * ✅ PROYEK YANG DIBUAT (sebagai creator/team lead)
-     * 1 user → banyak projects (created_by)
-     */
-    public function ledProjects()
-    {
-        return $this->hasMany(Project::class, 'created_by', 'id');
-    }
-
-    /**
-     * ✅ PROYEK YANG DIBUAT (alias untuk created_by)
+     * ✅ PROYEK YANG DIBUAT (sebagai creator)
      */
     public function createdProjects()
     {
@@ -112,18 +101,26 @@ class User extends Authenticatable
     }
 
     /**
-     * ✅ PROYEK YANG DIKERJAKAN (sebagai member)
+     * ✅ PROYEK YANG DIBUAT (alias untuk backward compatibility)
+     */
+    public function ledProjects()
+    {
+        return $this->createdProjects();
+    }
+
+    /**
+     * ✅ PROYEK YANG DIKERJAKAN (sebagai member via pivot table)
      * Banyak user → banyak projects (melalui project_members)
      */
     public function projects()
     {
         return $this->belongsToMany(Project::class, 'project_members', 'user_id', 'project_id')
-                    ->withPivot('role', 'joined_at')
-                    ->withTimestamps();
+            ->withPivot('role', 'joined_at')
+            ->withTimestamps();
     }
 
     /**
-     * ✅ PROYEK MEMBERSHIP (intermediate table)
+     * ✅ PROYEK MEMBERSHIP (intermediate table records)
      */
     public function projectMembers()
     {
@@ -131,12 +128,12 @@ class User extends Authenticatable
     }
 
     /**
-     * ✅ Get all members in user's projects
+     * ✅ Get all members in user's projects (team members)
      */
     public function members()
     {
-        return $this->belongsToMany(User::class, 'project_members')
-            ->withPivot('role')
+        return $this->belongsToMany(User::class, 'project_members', 'project_id', 'user_id')
+            ->withPivot('role', 'joined_at')
             ->withTimestamps();
     }
 
@@ -145,30 +142,21 @@ class User extends Authenticatable
     // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
     /**
-     * ✅ TUGAS YANG DI-ASSIGN KE USER
-     * Banyak user → banyak cards (melalui card_assignments)
-     */
-    public function assignedCards()
-    {
-        return $this->belongsToMany(Card::class, 'card_assignments', 'user_id', 'card_id')
-                    ->withPivot('assignment_status', 'started_at', 'completed_at')
-                    ->withTimestamps();
-    }
-
-    /**
-     * ✅ CARD ASSIGNMENTS (intermediate table)
-     */
-    public function cardAssignments()
-    {
-        return $this->hasMany(CardAssignment::class, 'user_id', 'id');
-    }
-
-    /**
-     * ✅ ASSIGNMENTS (alias untuk cardAssignments)
+     * ✅ CARD ASSIGNMENTS (intermediate table records)
      */
     public function assignments()
     {
         return $this->hasMany(CardAssignment::class, 'user_id', 'id');
+    }
+
+    /**
+     * ✅ TUGAS YANG DI-ASSIGN KE USER (via pivot table)
+     */
+    public function assignedCards()
+    {
+        return $this->belongsToMany(Card::class, 'card_assignments', 'user_id', 'card_id')
+            ->withPivot('assignment_status', 'started_at', 'completed_at')
+            ->withTimestamps();
     }
 
     /**
@@ -179,6 +167,26 @@ class User extends Authenticatable
         return $this->hasOne(CardAssignment::class, 'user_id')
             ->where('assignment_status', 'in_progress')
             ->latest();
+    }
+
+    /**
+     * ✅✅ TAMBAHAN BARU: Get active assignments
+     */
+    public function activeAssignments()
+    {
+        return $this->assignments()
+            ->whereIn('assignment_status', ['assigned', 'in_progress'])
+            ->with('card.board.project');
+    }
+
+    /**
+     * ✅✅ TAMBAHAN BARU: Get completed assignments
+     */
+    public function completedAssignments()
+    {
+        return $this->assignments()
+            ->where('assignment_status', 'completed')
+            ->with('card.board.project');
     }
 
     // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -209,7 +217,6 @@ class User extends Authenticatable
 
     /**
      * ✅ USER SETTINGS
-     * 1 user → 1 user_settings
      */
     public function settings()
     {
@@ -218,7 +225,6 @@ class User extends Authenticatable
 
     /**
      * ✅ Get or create settings for this user
-     * Auto-creates settings if not exists
      */
     public function getSettings()
     {
@@ -237,12 +243,11 @@ class User extends Authenticatable
     }
 
     // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-    // 💬 RELATIONSHIPS - MESSAGES (TAMBAHAN BARU)
+    // 💬 RELATIONSHIPS - MESSAGES
     // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
     /**
      * ✅ PESAN YANG DIKIRIM user ini
-     * 1 user → banyak messages (sebagai sender)
      */
     public function sentMessages()
     {
@@ -251,7 +256,6 @@ class User extends Authenticatable
 
     /**
      * ✅ PESAN YANG DITERIMA user ini
-     * 1 user → banyak messages (sebagai receiver)
      */
     public function receivedMessages()
     {
@@ -260,7 +264,6 @@ class User extends Authenticatable
 
     /**
      * ✅ PESAN YANG BELUM DIBACA
-     * Messages yang diterima dan belum dibaca
      */
     public function unreadMessages()
     {
@@ -344,7 +347,6 @@ class User extends Authenticatable
 
     /**
      * ✅ Getter untuk display name
-     * Menampilkan full_name jika ada, kalau tidak tampilkan username
      */
     public function getDisplayNameAttribute()
     {
@@ -382,27 +384,23 @@ class User extends Authenticatable
     }
 
     /**
-     * ✅ DIPERBARUI: Getter untuk avatar URL
-     * Prioritas: profile->avatar > user->avatar > fallback pravatar
+     * ✅ Getter untuk avatar URL
      */
     public function getAvatarUrlAttribute()
     {
-        // Cek profile avatar dulu
         if ($this->profile && $this->profile->avatar) {
             return asset('storage/avatars/' . $this->profile->avatar);
         }
-        
-        // Fallback ke avatar di tabel users
+
         if ($this->avatar) {
             return asset('storage/' . $this->avatar);
         }
-        
-        // Fallback ke pravatar.cc jika tidak ada avatar
+
         return 'https://i.pravatar.cc/150?u=' . $this->id;
     }
 
     /**
-     * ✅ CEK apakah user sedang online (aktif dalam 5 menit terakhir)
+     * ✅ CEK apakah user sedang online
      */
     public function getIsOnlineAttribute()
     {
@@ -462,7 +460,7 @@ class User extends Authenticatable
     }
 
     /**
-     * ✅ Cek apakah user bisa assign tugas (admin/teamlead)
+     * ✅ Cek apakah user bisa assign tugas
      */
     public function canAssignTasks()
     {
@@ -474,7 +472,7 @@ class User extends Authenticatable
     // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
     /**
-     * ✅ Cek apakah user sedang idle (available untuk tugas baru)
+     * ✅ Cek apakah user sedang idle
      */
     public function isAvailable()
     {
@@ -502,6 +500,83 @@ class User extends Authenticatable
         }
 
         return false;
+    }
+
+    // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    // ✅✅ HELPER METHODS - PROJECT ACCESS (TAMBAHAN BARU)
+    // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+    /**
+     * ✅✅ Check if user is member of a project
+     */
+    public function isMemberOf($projectId)
+    {
+        return $this->projects()->where('projects.id', $projectId)->exists();
+    }
+
+    /**
+     * ✅✅ Check if user is admin in a project
+     */
+    public function isAdminOf($projectId)
+    {
+        return $this->projectMembers()
+            ->where('project_id', $projectId)
+            ->whereIn('role', ['admin', 'super_admin'])
+            ->exists();
+    }
+
+    /**
+     * ✅✅ Check if user created a project
+     */
+    public function isCreatorOf($projectId)
+    {
+        return $this->createdProjects()->where('id', $projectId)->exists();
+    }
+
+    /**
+     * ✅✅ Check if user has access to a project (member or creator)
+     */
+    public function hasAccessTo($projectId)
+    {
+        return $this->isMemberOf($projectId) || $this->isCreatorOf($projectId);
+    }
+
+    /**
+     * ✅✅ Get all projects where user is admin
+     */
+    public function adminProjects()
+    {
+        return $this->projects()
+            ->wherePivotIn('role', ['admin', 'super_admin']);
+    }
+
+    /**
+     * ✅✅ Assign card to this user
+     */
+    public function assignCard($cardId, $status = 'assigned')
+    {
+        return CardAssignment::firstOrCreate(
+            ['card_id' => $cardId, 'user_id' => $this->id],
+            ['assignment_status' => $status]
+        );
+    }
+
+    /**
+     * ✅✅ Remove card assignment from this user
+     */
+    public function unassignCard($cardId)
+    {
+        return CardAssignment::where('card_id', $cardId)
+            ->where('user_id', $this->id)
+            ->delete();
+    }
+
+    /**
+     * ✅✅ Check if user is assigned to a card
+     */
+    public function isAssignedTo($cardId)
+    {
+        return $this->assignments()->where('card_id', $cardId)->exists();
     }
 
     // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -549,7 +624,15 @@ class User extends Authenticatable
     }
 
     /**
-     * ✅ Scope untuk idle users (available)
+     * ✅✅ Scope untuk developer + designer users (TAMBAHAN BARU)
+     */
+    public function scopeDevelopersAndDesigners($query)
+    {
+        return $query->whereIn('role', ['developer', 'designer']);
+    }
+
+    /**
+     * ✅ Scope untuk idle users
      */
     public function scopeAvailable($query)
     {
@@ -575,7 +658,7 @@ class User extends Authenticatable
     }
 
     /**
-     * ✅ Scope untuk users yang online (aktif dalam 5 menit terakhir)
+     * ✅ Scope untuk users yang online
      */
     public function scopeOnline($query)
     {
@@ -593,7 +676,6 @@ class User extends Authenticatable
     {
         parent::boot();
 
-        // Set default status saat user dibuat
         static::creating(function ($user) {
             if (empty($user->current_task_status)) {
                 $user->current_task_status = 'idle';

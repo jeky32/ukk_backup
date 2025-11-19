@@ -15,6 +15,162 @@ use Illuminate\Support\Facades\DB;
 class CardController extends Controller
 {
     /**
+     * ✅ BARU: Start working on card (auto-create In Progress board)
+     */
+    public function startWorking(Request $request, $cardId)
+    {
+        DB::beginTransaction();
+
+        try {
+            $card = Card::with('board.project')->findOrFail($cardId);
+            $project = $card->board->project;
+
+            // Cek atau buat board "In Progress"
+            $inProgressBoard = Board::firstOrCreate(
+                [
+                    'project_id' => $project->id,
+                    'board_name' => 'In Progress'
+                ],
+                [
+                    'description' => 'Board In Progress dibuat otomatis',
+                    'position' => 2,
+                    'created_at' => now(),
+                    'updated_at' => now(),
+                ]
+            );
+
+            // Update card
+            $card->update([
+                'status' => 'in_progress',
+                'board_id' => $inProgressBoard->id,
+                'updated_at' => now(),
+            ]);
+
+            // Update assignment status jika ada
+            if ($card->assignments()->where('user_id', auth()->id())->exists()) {
+                $card->assignments()
+                    ->where('user_id', auth()->id())
+                    ->update([
+                        'assignment_status' => 'in_progress',
+                        'started_at' => now(),
+                    ]);
+            }
+
+            DB::commit();
+
+            if ($request->expectsJson()) {
+                return response()->json([
+                    'success' => true,
+                    'message' => 'Card moved to In Progress',
+                    'card' => $card->fresh(),
+                    'board' => $inProgressBoard
+                ]);
+            }
+
+            return redirect()->back()->with('success', '✅ Card berhasil dipindah ke In Progress!');
+
+        } catch (\Exception $e) {
+            DB::rollBack();
+
+            if ($request->expectsJson()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Failed to start working: ' . $e->getMessage()
+                ], 500);
+            }
+
+            return redirect()->back()->with('error', '❌ Gagal memulai task: ' . $e->getMessage());
+        }
+    }
+
+    /**
+     * ✅ UPDATE: Update card status dengan auto-create board
+     */
+    public function updateStatus(Request $request, $cardId)
+    {
+        $validated = $request->validate([
+            'status' => 'required|in:todo,in_progress,review,done,blocker',
+            'position' => 'nullable|integer|min:0',
+        ]);
+
+        DB::beginTransaction();
+
+        try {
+            $card = Card::with('board.project')->findOrFail($cardId);
+            $project = $card->board->project;
+            $newStatus = $validated['status'];
+
+            // ✅ Mapping status ke board name dengan array
+            $statusToBoardMap = [
+                'todo' => ['board_name' => 'To Do', 'position' => 1],
+                'in_progress' => ['board_name' => 'In Progress', 'position' => 2],
+                'review' => ['board_name' => 'Review', 'position' => 3],
+                'done' => ['board_name' => 'Done', 'position' => 4],
+                'blocker' => ['board_name' => 'Blocker', 'position' => 5],
+            ];
+
+            $targetBoardData = $statusToBoardMap[$newStatus];
+
+            // ✅ Cari atau buat board baru otomatis (firstOrCreate)
+            $targetBoard = Board::firstOrCreate(
+                [
+                    'project_id' => $project->id,
+                    'board_name' => $targetBoardData['board_name']
+                ],
+                [
+                    'description' => "Board {$targetBoardData['board_name']} dibuat otomatis",
+                    'position' => $targetBoardData['position'],
+                    'created_at' => now(),
+                    'updated_at' => now(),
+                ]
+            );
+
+            // Get max position if provided
+            if (isset($validated['position'])) {
+                $position = $validated['position'];
+            } else {
+                $position = Card::where('board_id', $targetBoard->id)
+                    ->where('status', $newStatus)
+                    ->max('position') ?? 0;
+                $position += 1;
+            }
+
+            // Update card: status + pindah board
+            $card->update([
+                'status' => $newStatus,
+                'board_id' => $targetBoard->id,
+                'position' => $position,
+                'updated_at' => now(),
+            ]);
+
+            DB::commit();
+
+            if ($request->expectsJson()) {
+                return response()->json([
+                    'success' => true,
+                    'message' => "Card dipindah ke board {$targetBoard->board_name}",
+                    'card' => $card->fresh(),
+                    'board' => $targetBoard
+                ]);
+            }
+
+            return back()->with('success', "Card berhasil dipindah ke {$targetBoard->board_name}!");
+
+        } catch (\Exception $e) {
+            DB::rollBack();
+
+            if ($request->expectsJson()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Failed to update status: ' . $e->getMessage()
+                ], 500);
+            }
+
+            return back()->with('error', 'Gagal update status: ' . $e->getMessage());
+        }
+    }
+
+    /**
      * Add comment to card (untuk route cards.comment)
      */
     public function comment(Request $request, Card $card)
@@ -29,7 +185,7 @@ class CardController extends Controller
                 $comment = $card->addComment(Auth::id(), $validated['comment_text']);
             } else {
                 $comment = Comment::create([
-                    'card_id' => $card->card_id,
+                    'card_id' => $card->id,
                     'user_id' => Auth::id(),
                     'comment_text' => $validated['comment_text'],
                 ]);
@@ -62,6 +218,16 @@ class CardController extends Controller
     /**
      * Store a new card
      */
+    public function index()
+    {
+        // Ambil semua card beserta relasi creator (dan relasi tambahan jika ingin)
+        $cards = \App\Models\Card::with(['creator'])
+            ->latest()
+            ->get();
+
+        return view('admin.cards.index', compact('cards'));
+    }
+
     public function store(Request $request)
     {
         $validated = $request->validate([
@@ -213,34 +379,6 @@ class CardController extends Controller
 
         } catch (\Exception $e) {
             return back()->with('error', 'Failed to delete card: ' . $e->getMessage());
-        }
-    }
-
-    /**
-     * Update card status (for drag & drop)
-     */
-    public function updateStatus(Request $request, Card $card)
-    {
-        $validated = $request->validate([
-            'status' => 'required|in:todo,in_progress,review,done',
-            'position' => 'required|integer|min:0',
-        ]);
-
-        try {
-            // Update card status and position
-            $card->moveToStatus($validated['status'], $validated['position']);
-
-            return response()->json([
-                'success' => true,
-                'message' => 'Card status updated successfully',
-                'card' => $card->fresh()
-            ]);
-
-        } catch (\Exception $e) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Failed to update card status: ' . $e->getMessage()
-            ], 500);
         }
     }
 

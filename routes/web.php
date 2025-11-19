@@ -18,6 +18,7 @@ use App\Http\Controllers\Auth\ForgotPasswordController;
 use App\Http\Controllers\Admin\MonitoringController;
 use App\Http\Controllers\Admin\UserController;
 use App\Http\Controllers\Admin\SettingsController;
+use App\Http\Controllers\AdminReportController;
 use App\Http\Controllers\Admin\TaskController;
 use App\Http\Controllers\Admin\ActivityController;
 use Illuminate\Support\Facades\Hash;
@@ -88,12 +89,12 @@ Route::post('/register', [AuthController::class, 'register'])->name('register.po
 Route::get('/forgot-password', [ForgotPasswordController::class, 'showForgotForm'])->name('password.request');
 Route::post('/forgot-password', [ForgotPasswordController::class, 'sendResetLinkEmail'])->name('password.email');
 
-// LOGIN VIA GOOGLE
-Route::get('/auth/google', [GoogleController::class, 'redirect'])->name('auth.google');
-Route::get('/auth/google/callback', [GoogleController::class, 'callback']);
-Route::get('/admin/projects/{project_id}', [ProjectController::class, 'show'])->name('admin.projects.show');
+// // LOGIN VIA GOOGLE
+// Route::get('/auth/google', [GoogleController::class, 'redirect'])->name('auth.google');
+// Route::get('/auth/google/callback', [GoogleController::class, 'callback']);
+// Route::get('/admin/projects/{project_id}', [ProjectController::class, 'show'])->name('admin.projects.show');
 Route::get('admin/project/create', [ProjectController::class, 'create'])->name('admin.projects.create');
-Route::post('/admin/boards/', [BoardController::class, 'store'])->name('admin.boards.store');
+//Route::post('/admin/boards/', [BoardController::class, 'store'])->name('admin.boards.store');
 
 // API Time Logs Calendar
 Route::get('/api/time-logs-calendar', [ProjectController::class, 'getTimeLogsCalendar'])
@@ -128,16 +129,67 @@ Route::middleware(['auth', 'role:teamlead'])->prefix('teamlead')->name('teamlead
     Route::get('/dashboard', [TeamLeadController::class, 'dashboard'])->name('dashboard');
 
     // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-    // 📁 PROJECTS MANAGEMENT
+    // 📁 PROJECTS MANAGEMENT (✅ UPDATED - Langsung ke Kanban View)
     // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
     Route::get('/projects', [TeamLeadController::class, 'projects'])->name('projects.index');
-    Route::get('/projects/{project}', [TeamLeadController::class, 'showProject'])->name('projects.show');
+
+    // ✅ UPDATED: Langsung tampil cards Kanban (bukan list boards)
+    Route::get('/projects/{project}', [TeamLeadController::class, 'showProjectCards'])->name('projects.show');
+
+    // ✅ TAMBAHAN: Route detail project (jika masih dibutuhkan)
     Route::get('/project-detail/{project}', [TeamLeadController::class, 'projectDetail'])->name('project.detail');
 
     // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-    // 📈 MONITORING
+    // 📋 BOARD MANAGEMENT (✅ FITUR BOARD MANAGEMENT - SUDAH LENGKAP)
     // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-    Route::get('/monitoring', [TeamLeadController::class, 'monitoring'])->name('monitoring');
+    Route::get('/projects/{project}/boards/create', [TeamLeadController::class, 'createBoard'])->name('boards.create');
+    Route::post('/projects/{project}/boards', [TeamLeadController::class, 'storeBoard'])->name('boards.store');
+    Route::get('/projects/{project}/boards/{board}', [TeamLeadController::class, 'showBoard'])->name('boards.show');
+
+    // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    // 🃏 CARD MANAGEMENT - FULL CRUD (✅ UPDATED - COMPLETE & FUNCTIONAL)
+    // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+    // ✅ Create Card Form (dengan filter developers)
+    Route::get('/projects/{project}/boards/{board}/cards/create', [TeamLeadController::class, 'createCard'])->name('cards.create');
+
+    // ✅ TAMBAHAN BARU: Create Card Form (Tanpa Board - Auto create)
+    Route::get('/projects/{project}/cards/create', [TeamLeadController::class, 'createCardWithoutBoard'])->name('cards.create.auto');
+
+    // ✅ Store New Card (assign hanya ke developers) - Support dynamic board_id
+    Route::post('/boards/{board}/cards', [TeamLeadController::class, 'storeCard'])->name('cards.store');
+
+    // ❌ REMOVED: Show Card Detail routes (method tidak ada di controller)
+    // Route::get('/cards/{card}', [TeamLeadController::class, 'showCard'])->name('card.detail');
+    // Route::get('/cards/{card}/show', [TeamLeadController::class, 'showCard'])->name('cards.show');
+
+    // ✅ Edit Card Form (dengan filter developers)
+    Route::get('/cards/{card}/edit', [TeamLeadController::class, 'editCard'])->name('cards.edit');
+
+    // ✅ Update Card (assign hanya ke developers)
+    Route::put('/cards/{card}', [TeamLeadController::class, 'updateCard'])->name('cards.update');
+
+    // ✅ Delete Card
+    Route::delete('/cards/{card}', [TeamLeadController::class, 'deleteCard'])->name('cards.delete');
+
+    // ✅ TAMBAHAN BARU: Delete Card (alias dengan method destroy)
+    Route::delete('/cards/{card}/destroy', [TeamLeadController::class, 'deleteCard'])->name('cards.destroy');
+
+    // ✅ Update Card Status (AJAX for drag & drop)
+    Route::post('/cards/{card}/status', [TeamLeadController::class, 'updateCardStatus'])->name('card.status');
+
+    // ✅ Add Comment to Card
+    Route::post('/cards/{card}/comment', [TeamLeadController::class, 'addCardComment'])->name('cards.comment');
+
+    // ✅✅✅ TAMBAHAN PENTING: ASSIGN & REMOVE ASSIGNMENT
+    Route::post('/cards/{card}/assign', [TeamLeadController::class, 'assignTask'])->name('cards.assign');
+    Route::delete('/cards/{card}/remove-assignment/{userId}', [TeamLeadController::class, 'removeAssignment'])->name('cards.removeAssignment');
+
+    // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    // ❌ MONITORING ROUTES REMOVED (method tidak ada di controller)
+    // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    // Route::get('/monitoring', [TeamLeadController::class, 'monitoring'])->name('monitoring');
+    // Route::get('/projects/{project}/monitoring', [TeamLeadController::class, 'monitoring'])->name('projects.monitoring');
 
     // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
     // 📊 REPORTS
@@ -150,17 +202,24 @@ Route::middleware(['auth', 'role:teamlead'])->prefix('teamlead')->name('teamlead
     // 💬 MESSAGES
     // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
     Route::get('/messages', [TeamLeadController::class, 'messages'])->name('messages');
+    Route::get('/messages/chat/{userId}', [TeamLeadController::class, 'loadChat'])->name('messages.load-chat');
+    Route::post('/messages/send', [TeamLeadController::class, 'sendMessage'])->name('messages.send');
+    Route::get('/messages/unread-count', [TeamLeadController::class, 'getUnreadCount'])->name('messages.unread-count');
+    Route::get('/messages/search-users', [TeamLeadController::class, 'searchUsers'])->name('messages.search-users');
 
     // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-    // ✅ REVIEW & APPROVAL
+    // ✅ REVIEW & APPROVAL (✅ NEW - TAMBAHAN)
     // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
     Route::get('/review', [TeamLeadController::class, 'review'])->name('review');
+    Route::get('/review/{card}', [TeamLeadController::class, 'reviewDetail'])->name('review.detail');
+    Route::get('/review/{card}/ajax', [TeamLeadController::class, 'reviewDetailAjax'])->name('review.detail.ajax');
 
     // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
     // 🕑 HISTORY / RIWAYAT
     // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
     Route::get('/riwayat', [TeamLeadController::class, 'riwayat'])->name('riwayat.index');
-
+    Route::get('/history', [TeamLeadController::class, 'riwayat'])->name('history');
+    Route::get('/history/export', [TeamLeadController::class, 'exportHistory'])->name('history.export');
 
     // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
     // 📋 TASK ASSIGNMENTS
@@ -178,21 +237,6 @@ Route::middleware(['auth', 'role:teamlead'])->prefix('teamlead')->name('teamlead
 | Routes untuk manage cards, status, comments di project panel
 | Middleware: auth
 */
-
-Route::middleware(['auth', 'role:teamlead'])->prefix('teamlead')->name('teamlead.')->group(function () {
-    Route::get('/messages', [TeamLeadController::class, 'messages'])->name('messages');
-    Route::get('/messages/chat/{userId}', [TeamLeadController::class, 'loadChat'])->name('messages.load-chat');
-    Route::post('/messages/send', [TeamLeadController::class, 'sendMessage'])->name('messages.send');
-    Route::get('/messages/unread-count', [TeamLeadController::class, 'getUnreadCount'])->name('messages.unread-count');
-    Route::get('/messages/search-users', [TeamLeadController::class, 'searchUsers'])->name('messages.search-users');
-    Route::get('/review/{card}/detail', [TeamLeadController::class, 'reviewDetail'])->name('review.detail');
-    Route::get('/history', [TeamLeadController::class, 'riwayat'])->name('history');
-    Route::get('/card/{card}/detail', [TeamLeadController::class, 'getCardDetail'])->name('card.detail');
-    Route::get('/history/export', [TeamLeadController::class, 'exportHistory'])->name('history.export');
-});
-
-Route::post('/developer/cards/{card}/block', [DeveloperController::class, 'blockTask'])
-    ->name('developer.cards.block');
 
 Route::middleware(['auth'])->prefix('panel/teamlead')->name('panel.teamlead.')->group(function () {
 
@@ -224,10 +268,16 @@ Route::middleware(['auth', 'role:teamlead'])->group(function () {
 
     // Quick actions
     Route::post('/teamlead/quick-assign/{card}/{user}', [TeamLeadController::class, 'quickAssign'])->name('teamlead.quick.assign');
+
+    // ✅ NEW: Approve & Reject Task Routes
     Route::post('/teamlead/approve-task/{card}', [TeamLeadController::class, 'approveTask'])->name('teamlead.approve.task');
     Route::post('/teamlead/reject-task/{card}', [TeamLeadController::class, 'rejectTask'])->name('teamlead.reject.task');
 
 });
+
+Route::post('/developer/cards/{card}/block', [DeveloperController::class, 'blockTask'])
+    ->name('developer.cards.block');
+
 // ===================================================
 // 👥 PROTECTED ROUTES (User harus login)
 // ===================================================
@@ -267,6 +317,7 @@ Route::middleware('auth')->group(function () {
 
     // === CARDS MANAGEMENT ===
     Route::post('/admin/cards', [CardController::class, 'store'])->name('admin.cards.store');
+    Route::get('/admin/cards', [CardController::class, 'index'])->name('admin.cards.index'); // Untuk list card
     Route::get('/admin/cards/{card}', [CardController::class, 'show'])->name('admin.cards.show');
     Route::put('/admin/cards/{card}', [CardController::class, 'update'])->name('admin.cards.update');
     Route::delete('/admin/cards/{card}', [CardController::class, 'destroy'])->name('admin.cards.destroy');
@@ -289,27 +340,31 @@ Route::middleware('auth')->group(function () {
     Route::put('/admin/cards/{card}/tasks/{task}', [CardController::class, 'updateTask'])->name('admin.cards.tasks.update');
     Route::delete('/admin/cards/{card}/tasks/{task}', [CardController::class, 'deleteTask'])->name('admin.cards.tasks.destroy');
 
-    // === DEVELOPER ROUTES ===
-Route::middleware(['auth'])->prefix('developer')->name('developer.')->group(function () {
-    Route::get('/dashboard', [DeveloperController::class, 'dashboard'])->name('dashboard');
-    
-    // Task actions
-    Route::post('/tasks/{card}/start', [DeveloperController::class, 'startTask'])->name('start-task');
-    Route::post('/tasks/pause', [DeveloperController::class, 'pauseTask'])->name('pause-task');
-    Route::post('/tasks/{card}/complete', [DeveloperController::class, 'completeTask'])->name('complete-task');
-    Route::post('/cards/{card}/block', [DeveloperController::class, 'blockCard'])->name('cards.block');
-    
-    // Time logs & statistics
-    Route::get('/time-logs', [DeveloperController::class, 'timeLogs'])->name('time-logs');
-    Route::get('/statistics', [DeveloperController::class, 'statistics'])->name('statistics');
-    
-    // **ROUTE BARU: View Board untuk Developer (Read-only)**
-    Route::get('/projects/{project}/boards/{board}', [DeveloperController::class, 'showBoard'])->name('boards.show');
-});
+    // ===================================================
+    // 💻 DEVELOPER ROUTES (✅ UPDATED - AUTO STATUS WORKFLOW)
+    // ===================================================
+    Route::middleware(['auth'])->prefix('developer')->name('developer.')->group(function () {
+        Route::get('/dashboard', [DeveloperController::class, 'dashboard'])->name('dashboard');
 
+        // ✅ TAMBAHAN BARU: Task Status Workflow
+        Route::post('/tasks/{card}/start', [DeveloperController::class, 'startTask'])->name('start-task');
+        Route::post('/tasks/pause', [DeveloperController::class, 'pauseTask'])->name('pause-task');
 
-// === CARD COMMENT ROUTE (jika belum ada) ===
-Route::post('/cards/{card}/comment', [CardController::class, 'comment'])->name('cards.comment');
+        // ✅ UPDATED: Complete task & submit for review
+        Route::post('/tasks/{card}/complete', [DeveloperController::class, 'completeTask'])->name('complete-task');
+
+        Route::post('/cards/{card}/block', [DeveloperController::class, 'blockCard'])->name('cards.block');
+
+        // Time logs & statistics
+        Route::get('/time-logs', [DeveloperController::class, 'timeLogs'])->name('time-logs');
+        Route::get('/statistics', [DeveloperController::class, 'statistics'])->name('statistics');
+
+        // **ROUTE BARU: View Board untuk Developer (Read-only)**
+        Route::get('/projects/{project}/boards/{board}', [DeveloperController::class, 'showBoard'])->name('boards.show');
+    });
+
+    // === CARD COMMENT ROUTE (jika belum ada) ===
+    Route::post('/cards/{card}/comment', [CardController::class, 'comment'])->name('cards.comment');
 
     // === DESIGNER ROUTES ===
     Route::get('/designer/dashboard', [DesignerController::class, 'dashboard'])->name('designer.dashboard');
@@ -353,6 +408,10 @@ Route::post('/cards/{card}/comment', [CardController::class, 'comment'])->name('
         Route::post('/settings/reset', [SettingsController::class, 'resetSettings'])->name('settings.reset');
         // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
+        // === REPORTS ADMIN ===
+        Route::get('/reports', [AdminReportController::class, 'index'])->name('reports.index');
+        Route::get('/reports/pdf', [AdminReportController::class, 'exportPdf'])->name('reports.exportPdf');
+
         // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
         // 📋 TASKS ROUTES - NEW FEATURE
         // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -371,7 +430,7 @@ Route::post('/cards/{card}/comment', [CardController::class, 'comment'])->name('
     });
 
     // ===================================================
-    // 👨‍💼 TEAM LEAD ROUTES
+    // 👨‍💼 TEAM LEAD ROUTES (Legacy - Keep for backward compatibility)
     // ===================================================
     Route::middleware('role:teamlead')->group(function () {
         Route::get('/teamlead/dashboard', [TeamLeadController::class, 'dashboard'])->name('teamlead.dashboard');

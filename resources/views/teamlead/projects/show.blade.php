@@ -1,17 +1,26 @@
 @extends('layouts.teamlead')
 
-@section('title', 'Project Detail - ' . $project->project_name)
+@section('title', $project->project_name . ' - Project')
 @section('page-title', $project->project_name)
-@section('page-subtitle', $project->description)
+@section('page-subtitle', 'Manage boards and monitor progress')
 
 @push('styles')
 <style>
+    .board-column {
+        min-width: 320px;
+        max-width: 320px;
+        background: #f8fafc;
+        border-radius: 12px;
+        padding: 16px;
+    }
+
     .board-scroll {
         display: flex;
         gap: 1.5rem;
         overflow-x: auto;
-        padding: 1rem 0;
-        scroll-behavior: smooth;
+        padding-bottom: 1rem;
+        scrollbar-width: thin;
+        scrollbar-color: #cbd5e1 #f1f5f9;
     }
 
     .board-scroll::-webkit-scrollbar {
@@ -19,231 +28,393 @@
     }
 
     .board-scroll::-webkit-scrollbar-track {
-        background: #f3f4f6;
-        border-radius: 4px;
+        background: #f1f5f9;
+        border-radius: 10px;
     }
 
     .board-scroll::-webkit-scrollbar-thumb {
-        background: #3b82f6;
-        border-radius: 4px;
-    }
-
-    .board-column {
-        min-width: 300px;
-        max-width: 300px;
+        background: #cbd5e1;
+        border-radius: 10px;
     }
 
     .card-item {
-        transition: all 0.2s ease;
+        background: white;
+        border-radius: 10px;
+        padding: 14px;
+        margin-bottom: 12px;
+        border: 2px solid transparent;
+        transition: all 0.2s;
+        cursor: pointer;
     }
 
     .card-item:hover {
+        border-color: #6366f1;
+        box-shadow: 0 4px 12px rgba(99, 102, 241, 0.15);
         transform: translateY(-2px);
-        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
     }
+
+    .status-badge {
+        font-size: 11px;
+        padding: 4px 10px;
+        border-radius: 12px;
+        font-weight: 600;
+        text-transform: uppercase;
+    }
+
+    .status-todo { background: #e5e7eb; color: #374151; }
+    .status-in_progress { background: #dbeafe; color: #1e40af; }
+    .status-review { background: #fef3c7; color: #92400e; }
+    .status-done { background: #d1fae5; color: #065f46; }
+    .status-blocker { background: #fee2e2; color: #991b1b; }
 </style>
 @endpush
 
 @section('content')
-<div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-6">
-
-    <!-- Header Berwarna -->
-    <div class="bg-blue-500 rounded-lg shadow-lg p-6 text-white">
-        <div class="flex items-start justify-between">
-            <div class="flex items-center space-x-4 flex-1">
-                <div class="w-14 h-14 bg-white/20 backdrop-blur-sm rounded-lg flex items-center justify-center shadow-lg">
-                    <i class="fas fa-folder-open text-white text-2xl"></i>
+<div class="px-4 py-6">
+    <!-- Header -->
+    <div class="bg-white rounded-2xl shadow-lg p-6 mb-6 border-2 border-indigo-100">
+        <div class="flex items-center justify-between mb-4">
+            <div class="flex items-center space-x-4">
+                <div class="w-14 h-14 bg-gradient-to-br from-indigo-500 to-purple-600 rounded-xl flex items-center justify-center">
+                    <i class="fas fa-project-diagram text-white text-2xl"></i>
                 </div>
-                <div class="flex-1">
-                    <h1 class="text-2xl font-bold mb-1">{{ $project->project_name }}</h1>
-                    <p class="text-sm text-blue-100">{{ $project->description }}</p>
-
-                    @php
-                        $totalCards = $project->boards->sum(fn($b) => $b->cards->count());
-                        $doneCards = $project->boards->sum(fn($b) => $b->cards->where('status', 'done')->count());
-                        $progress = $totalCards > 0 ? round(($doneCards / $totalCards) * 100) : 0;
-                    @endphp
-
-                    <div class="flex items-center space-x-6 mt-3">
-                        <div class="flex items-center space-x-2">
-                            <span class="text-sm font-medium">Progress:</span>
-                            <span class="text-xl font-bold">{{ $progress }}%</span>
-                        </div>
-                        @if($project->deadline)
-                        <div class="flex items-center space-x-2 text-sm bg-white/20 rounded-lg px-3 py-1">
-                            <i class="far fa-calendar"></i>
-                            <span class="font-medium">{{ \Carbon\Carbon::parse($project->deadline)->format('d M Y') }}</span>
-                        </div>
-                        @endif
-                    </div>
+                <div>
+                    <h1 class="text-2xl font-bold text-gray-900">{{ $project->project_name }}</h1>
+                    <p class="text-gray-600">{{ $project->description }}</p>
                 </div>
             </div>
-
-            <a href="{{ route('teamlead.projects.index') }}"
-               class="px-5 py-2.5 bg-white hover:bg-blue-50 text-blue-600 rounded-lg font-semibold transition-colors flex items-center text-sm shadow-md">
-                <i class="fas fa-arrow-left mr-2"></i>
-                Back
+            <a href="{{ route('teamlead.dashboard') }}"
+               class="px-4 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-xl font-semibold transition">
+                <i class="fas fa-arrow-left mr-2"></i>Back
             </a>
         </div>
-    </div>
 
-    <!-- Statistics Berwarna -->
-    <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
-        @php
-            $statCards = [
-                ['label' => 'Total Tasks', 'value' => $stats['total_tasks'] ?? 0, 'icon' => 'fa-tasks', 'bg' => 'bg-blue-500', 'badge' => 'bg-blue-100 text-blue-700'],
-                ['label' => 'In Progress', 'value' => $stats['in_progress'] ?? 0, 'icon' => 'fa-spinner', 'bg' => 'bg-orange-500', 'badge' => 'bg-orange-100 text-orange-700'],
-                ['label' => 'Review', 'value' => $stats['review'] ?? 0, 'icon' => 'fa-eye', 'bg' => 'bg-teal-500', 'badge' => 'bg-teal-100 text-teal-700'],
-                ['label' => 'Completed', 'value' => $stats['done'] ?? 0, 'icon' => 'fa-check-circle', 'bg' => 'bg-green-500', 'badge' => 'bg-green-100 text-green-700']
-            ];
-        @endphp
-
-        @foreach($statCards as $stat)
-        <div class="{{ $stat['bg'] }} rounded-lg shadow-lg p-5 text-white">
-            <div class="flex items-center justify-between mb-3">
-                <i class="fas {{ $stat['icon'] }} text-2xl opacity-80"></i>
-                <span class="px-2 py-1 bg-white/20 rounded-full text-xs font-bold">STAT</span>
+        <!-- Stats -->
+        <div class="grid grid-cols-4 gap-4 mt-4">
+            @php
+                $totalCards = $project->boards->sum(fn($b) => $b->cards->count());
+                $doneCards = $project->boards->sum(fn($b) => $b->cards->where('status', 'done')->count());
+                $progress = $totalCards > 0 ? round(($doneCards / $totalCards) * 100) : 0;
+            @endphp
+            <div class="text-center p-4 bg-blue-50 rounded-xl">
+                <p class="text-3xl font-bold text-blue-600">{{ $project->boards->count() }}</p>
+                <p class="text-sm text-gray-600 font-medium">Boards</p>
             </div>
-            <p class="text-3xl font-bold mb-1">{{ $stat['value'] }}</p>
-            <p class="text-sm opacity-90 font-medium">{{ $stat['label'] }}</p>
-        </div>
-        @endforeach
-    </div>
-
-    <!-- Team Members dengan Warna -->
-    <div class="bg-white rounded-lg shadow-md border-2 border-gray-200 p-6">
-        <h3 class="text-lg font-bold text-gray-900 mb-4 flex items-center">
-            <div class="w-10 h-10 bg-blue-500 rounded-lg flex items-center justify-center mr-3">
-                <i class="fas fa-users text-white"></i>
+            <div class="text-center p-4 bg-purple-50 rounded-xl">
+                <p class="text-3xl font-bold text-purple-600">{{ $totalCards }}</p>
+                <p class="text-sm text-gray-600 font-medium">Total Tasks</p>
             </div>
-            Team Members
-            <span class="ml-3 px-3 py-1 bg-blue-100 text-blue-700 rounded-lg text-sm font-semibold">
-                {{ $project->members->count() }}
-            </span>
-        </h3>
-
-        <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
-            @foreach($project->members as $member)
-                @php
-                    $memberColors = ['bg-blue-500', 'bg-green-500', 'bg-orange-500', 'bg-teal-500', 'bg-pink-500', 'bg-indigo-500'];
-                    $memberColor = $memberColors[$loop->index % count($memberColors)];
-                @endphp
-            <div class="flex items-center space-x-3 p-3 bg-gray-50 rounded-lg border-2 border-gray-200 hover:border-blue-300 transition-colors">
-                <div class="w-10 h-10 {{ $memberColor }} rounded-full flex items-center justify-center text-white font-bold shadow-md">
-                    {{ strtoupper(substr($member->full_name, 0, 1)) }}
-                </div>
-                <div class="flex-1 min-w-0">
-                    <p class="text-sm font-semibold text-gray-900 truncate">{{ $member->full_name }}</p>
-                    <p class="text-xs text-gray-600 font-medium">{{ ucfirst($member->pivot->role ?? $member->role) }}</p>
-                </div>
+            <div class="text-center p-4 bg-green-50 rounded-xl">
+                <p class="text-3xl font-bold text-green-600">{{ $doneCards }}</p>
+                <p class="text-sm text-gray-600 font-medium">Completed</p>
             </div>
-            @endforeach
+            <div class="text-center p-4 bg-indigo-50 rounded-xl">
+                <p class="text-3xl font-bold text-indigo-600">{{ $progress }}%</p>
+                <p class="text-sm text-gray-600 font-medium">Progress</p>
+            </div>
         </div>
     </div>
 
-    <!-- Boards dengan Warna Berbeda -->
-    <div class="bg-white rounded-lg shadow-md border-2 border-gray-200 p-6">
-        <div class="flex items-center justify-between mb-5">
-            <h3 class="text-lg font-bold text-gray-900 flex items-center">
-                <div class="w-10 h-10 bg-blue-500 rounded-lg flex items-center justify-center mr-3">
-                    <i class="fas fa-columns text-white"></i>
-                </div>
-                Project Boards
-                <span class="ml-3 px-3 py-1 bg-blue-100 text-blue-700 rounded-lg text-sm font-semibold">
-                    {{ $project->boards->count() }}
-                </span>
-            </h3>
+    <!-- Kanban Boards -->
+    <div class="bg-white rounded-2xl shadow-xl p-8 border-2 border-indigo-100">
+        <div class="flex items-center justify-between mb-6">
+            <h2 class="text-2xl font-bold flex items-center">
+                <i class="fas fa-columns mr-3 text-indigo-600"></i>
+                Boards & Tasks
+            </h2>
 
-            <div class="flex space-x-2">
-                <button onclick="document.querySelector('.board-scroll').scrollBy({left: -320, behavior: 'smooth'})"
-                        class="w-9 h-9 bg-blue-100 hover:bg-blue-200 text-blue-600 rounded-lg flex items-center justify-center transition-colors">
-                    <i class="fas fa-chevron-left"></i>
+            <div class="flex items-center space-x-3">
+                <!-- ✅ BUTTON ADD CARD -->
+                <button onclick="openModalAddCard()"
+                        class="px-4 py-2 bg-gradient-to-r from-indigo-600 to-blue-600 hover:from-indigo-700 hover:to-blue-700 text-white rounded-xl font-semibold transition shadow-lg">
+                    <i class="fas fa-plus mr-2"></i>Add Card
                 </button>
-                <button onclick="document.querySelector('.board-scroll').scrollBy({left: 320, behavior: 'smooth'})"
-                        class="w-9 h-9 bg-blue-100 hover:bg-blue-200 text-blue-600 rounded-lg flex items-center justify-center transition-colors">
-                    <i class="fas fa-chevron-right"></i>
+
+                <!-- Scroll Navigation -->
+                <button onclick="document.querySelector('.board-scroll').scrollBy({left: -380, behavior: 'smooth'})"
+                        class="w-10 h-10 bg-gray-100 hover:bg-indigo-100 rounded-xl flex items-center justify-center transition">
+                    <i class="fas fa-chevron-left text-gray-600"></i>
+                </button>
+                <button onclick="document.querySelector('.board-scroll').scrollBy({left: 380, behavior: 'smooth'})"
+                        class="w-10 h-10 bg-gray-100 hover:bg-indigo-100 rounded-xl flex items-center justify-center transition">
+                    <i class="fas fa-chevron-right text-gray-600"></i>
                 </button>
             </div>
         </div>
 
+        <!-- ✅ BOARDS HORIZONTAL SCROLL -->
         <div class="board-scroll">
-            @foreach($project->boards as $board)
-                @php
-                    $boardColors = [
-                        'To Do' => ['bg' => 'bg-gray-500', 'light' => 'bg-gray-50', 'border' => 'border-gray-200', 'icon' => 'clipboard-list'],
-                        'In Progress' => ['bg' => 'bg-blue-500', 'light' => 'bg-blue-50', 'border' => 'border-blue-200', 'icon' => 'spinner'],
-                        'Review' => ['bg' => 'bg-orange-500', 'light' => 'bg-orange-50', 'border' => 'border-orange-200', 'icon' => 'eye'],
-                        'Done' => ['bg' => 'bg-green-500', 'light' => 'bg-green-50', 'border' => 'border-green-200', 'icon' => 'check-circle']
-                    ];
-                    $color = $boardColors[$board->board_name] ?? ['bg' => 'bg-gray-500', 'light' => 'bg-gray-50', 'border' => 'border-gray-200', 'icon' => 'clipboard'];
-                @endphp
-
+            @forelse($project->boards as $board)
+                <!-- Board Column -->
                 <div class="board-column">
-                    <div class="{{ $color['bg'] }} rounded-t-lg p-4 shadow-md">
-                        <div class="flex items-center justify-between text-white">
-                            <div class="flex items-center space-x-2">
-                                <i class="fas fa-{{ $color['icon'] }}"></i>
-                                <h4 class="font-bold">{{ $board->board_name }}</h4>
-                            </div>
-                            <span class="px-2.5 py-1 bg-white/20 backdrop-blur-sm rounded-full text-xs font-bold">
-                                {{ $board->cards->count() }}
-                            </span>
+                    <!-- Board Header -->
+                    <div class="flex items-center justify-between mb-4 pb-3 border-b-2 border-indigo-200">
+                        <div>
+                            <h3 class="font-bold text-gray-900 text-lg">{{ $board->board_name }}</h3>
+                            <p class="text-xs text-gray-500">{{ $board->cards->count() }} tasks</p>
                         </div>
+                        <a href="{{ route('teamlead.boards.show', [$project->id, $board->id]) }}"
+                           class="w-9 h-9 bg-indigo-100 hover:bg-indigo-200 rounded-lg flex items-center justify-center transition">
+                            <i class="fas fa-arrow-right text-indigo-600"></i>
+                        </a>
                     </div>
 
-                    <div class="{{ $color['light'] }} rounded-b-lg p-3 space-y-2 min-h-[300px] border-l-2 border-r-2 border-b-2 {{ $color['border'] }}">
-                        @forelse($board->cards as $card)
-                        <div class="card-item bg-white rounded-lg border-2 {{ $color['border'] }} p-3 shadow-sm">
-                            <h5 class="font-semibold text-gray-900 text-sm mb-2 line-clamp-2">
-                                {{ $card->card_title }}
-                            </h5>
+                    <!-- Cards Preview (max 5) -->
+                    <div class="space-y-3 mb-3 max-h-96 overflow-y-auto">
+                        @foreach($board->cards->take(5) as $card)
+                        <a href="{{ route('teamlead.cards.show', $card->id) }}" class="block">
+                            <div class="card-item">
+                                <!-- Card Title -->
+                                <h4 class="font-semibold text-gray-800 text-sm mb-2 line-clamp-2">
+                                    {{ $card->card_title }}
+                                </h4>
 
-                            @if($card->description)
-                            <p class="text-xs text-gray-600 mb-3 line-clamp-2">{{ $card->description }}</p>
-                            @endif
+                                <!-- Card Meta -->
+                                <div class="flex items-center justify-between text-xs">
+                                    <span class="status-badge status-{{ $card->status }}">
+                                        {{ ucfirst(str_replace('_', ' ', $card->status)) }}
+                                    </span>
 
-                            <div class="flex items-center justify-between text-xs">
-                                @if($card->assignedMembers && $card->assignedMembers->count() > 0)
-                                <div class="flex -space-x-1">
-                                    @foreach($card->assignedMembers->take(3) as $member)
-                                        @php
-                                            $avatarColors = ['bg-blue-500', 'bg-green-500', 'bg-orange-500', 'bg-teal-500', 'bg-pink-500'];
-                                            $avatarColor = $avatarColors[$loop->index % count($avatarColors)];
-                                        @endphp
-                                    <div class="w-6 h-6 {{ $avatarColor }} rounded-full flex items-center justify-center text-white font-bold text-xs border-2 border-white shadow-sm"
-                                         title="{{ $member->full_name }}">
-                                        {{ strtoupper(substr($member->full_name, 0, 1)) }}
-                                    </div>
+                                    @if($card->due_date)
+                                    <span class="text-gray-500">
+                                        <i class="far fa-clock mr-1"></i>
+                                        {{ \Carbon\Carbon::parse($card->due_date)->format('M d') }}
+                                    </span>
+                                    @endif
+                                </div>
+
+                                <!-- Assigned Users -->
+                                @if($card->assignments && $card->assignments->count() > 0)
+                                <div class="flex -space-x-2 mt-2">
+                                    @foreach($card->assignments->take(3) as $assignment)
+                                    <img src="https://ui-avatars.com/api/?name={{ urlencode($assignment->user->full_name) }}&size=32&background=random"
+                                         class="w-6 h-6 rounded-full border-2 border-white"
+                                         title="{{ $assignment->user->full_name }}">
                                     @endforeach
-                                    @if($card->assignedMembers->count() > 3)
-                                    <div class="w-6 h-6 bg-gray-300 rounded-full flex items-center justify-center text-gray-700 font-bold text-xs border-2 border-white shadow-sm">
-                                        +{{ $card->assignedMembers->count() - 3 }}
+                                    @if($card->assignments->count() > 3)
+                                    <div class="w-6 h-6 bg-gray-400 rounded-full border-2 border-white flex items-center justify-center">
+                                        <span class="text-white text-xs font-bold">+{{ $card->assignments->count() - 3 }}</span>
                                     </div>
                                     @endif
                                 </div>
-                                @else
-                                <span class="text-gray-400">Unassigned</span>
-                                @endif
-
-                                @if($card->subtasks && $card->subtasks->count() > 0)
-                                <span class="px-2 py-1 bg-gray-100 rounded text-gray-700 font-medium">
-                                    <i class="fas fa-list-ul mr-1"></i>
-                                    {{ $card->subtasks->where('status', 'done')->count() }}/{{ $card->subtasks->count() }}
-                                </span>
                                 @endif
                             </div>
+                        </a>
+                        @endforeach
+
+                        @if($board->cards->count() > 5)
+                        <div class="text-center py-2">
+                            <a href="{{ route('teamlead.boards.show', [$project->id, $board->id]) }}"
+                               class="text-xs text-indigo-600 hover:text-indigo-800 font-semibold">
+                                View {{ $board->cards->count() - 5 }} more →
+                            </a>
                         </div>
-                        @empty
-                        <div class="text-center py-10 text-gray-400">
+                        @endif
+
+                        @if($board->cards->count() === 0)
+                        <div class="text-center py-8 text-gray-400">
                             <i class="fas fa-inbox text-3xl mb-2"></i>
-                            <p class="text-sm font-medium">No tasks</p>
+                            <p class="text-xs">No cards yet</p>
                         </div>
-                        @endforelse
+                        @endif
+                    </div>
+
+                    <!-- View All Button -->
+                    <a href="{{ route('teamlead.boards.show', [$project->id, $board->id]) }}"
+                       class="block w-full py-2 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 rounded-lg text-center text-sm font-semibold transition">
+                        <i class="fas fa-eye mr-2"></i>View Board
+                    </a>
+                </div>
+            @empty
+                <!-- Empty State -->
+                <div class="col-span-full text-center py-16">
+                    <div class="w-20 h-20 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                        <i class="fas fa-columns text-gray-400 text-3xl"></i>
+                    </div>
+                    <h3 class="text-xl font-bold text-gray-700 mb-2">No Boards Yet</h3>
+                    <p class="text-gray-500 mb-6">Start by creating a card - boards are automatically managed</p>
+                    <button onclick="openModalAddCard()"
+                            class="px-6 py-3 bg-gradient-to-r from-indigo-600 to-blue-600 hover:from-indigo-700 hover:to-blue-700 text-white rounded-xl font-semibold transition shadow-lg">
+                        <i class="fas fa-plus mr-2"></i>Create First Card
+                    </button>
+                </div>
+            @endforelse
+        </div>
+
+        <!-- Board Count Info -->
+        @if($project->boards->count() > 0)
+        <div class="mt-4 text-center text-sm text-gray-500">
+            Showing {{ $project->boards->count() }} {{ Str::plural('board', $project->boards->count()) }}
+        </div>
+        @endif
+    </div>
+</div>
+
+<!-- ✅ MODAL ADD CARD -->
+<div id="modalAddCard" class="fixed inset-0 bg-black/50 backdrop-blur-sm hidden z-50 flex items-center justify-center">
+    <div class="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto m-4">
+        <form action="{{ route('teamlead.cards.store', ['board' => 'auto']) }}" method="POST">
+            @csrf
+            <input type="hidden" name="project_id" value="{{ $project->id }}">
+
+            <!-- Modal Header -->
+            <div class="sticky top-0 bg-white border-b border-gray-200 px-6 py-4 flex items-center justify-between rounded-t-2xl">
+                <h3 class="text-2xl font-bold text-gray-800">
+                    <i class="fas fa-plus-circle text-indigo-600 mr-2"></i>Add New Card
+                </h3>
+                <button type="button" onclick="closeModalAddCard()" class="text-gray-400 hover:text-gray-600 transition">
+                    <i class="fas fa-times text-2xl"></i>
+                </button>
+            </div>
+
+            <!-- Modal Body -->
+            <div class="px-6 py-4 space-y-5">
+                <!-- Card Title -->
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-2">
+                        <i class="fas fa-heading text-indigo-500 mr-2"></i>
+                        Card Title <span class="text-red-500">*</span>
+                    </label>
+                    <input type="text" name="card_title" required
+                           class="w-full border-2 border-gray-300 rounded-xl px-4 py-3 focus:outline-none focus:ring-2 focus:ring-indigo-500 transition"
+                           placeholder="Enter card title">
+                </div>
+
+                <!-- Description -->
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-2">
+                        <i class="fas fa-align-left text-purple-500 mr-2"></i>Description
+                    </label>
+                    <textarea name="description" rows="3"
+                              class="w-full border-2 border-gray-300 rounded-xl px-4 py-3 focus:outline-none focus:ring-2 focus:ring-purple-500 transition"
+                              placeholder="Add card description..."></textarea>
+                </div>
+
+                <!-- Due Date & Priority -->
+                <div class="grid grid-cols-2 gap-4">
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-2">
+                            <i class="fas fa-calendar text-red-500 mr-2"></i>Due Date
+                        </label>
+                        <input type="date" name="due_date" min="{{ date('Y-m-d') }}"
+                               class="w-full border-2 border-gray-300 rounded-xl px-4 py-3 focus:outline-none focus:ring-2 focus:ring-red-500 transition">
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-2">
+                            <i class="fas fa-flag text-orange-500 mr-2"></i>Priority <span class="text-red-500">*</span>
+                        </label>
+                        <select name="priority" required
+                                class="w-full border-2 border-gray-300 rounded-xl px-4 py-3 focus:outline-none focus:ring-2 focus:ring-orange-500 transition">
+                            <option value="medium" selected>Medium</option>
+                            <option value="low">Low</option>
+                            <option value="high">High</option>
+                        </select>
                     </div>
                 </div>
-            @endforeach
-        </div>
-    </div>
 
+                <!-- ✅ Status (Locked to "To Do") -->
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-2">
+                        <i class="fas fa-tasks text-purple-500 mr-2"></i>Status
+                    </label>
+                    <div class="px-4 py-3 bg-gray-50 border-2 border-gray-200 rounded-xl flex items-center justify-between">
+                        <span class="flex items-center text-gray-700 font-semibold">
+                            <span class="w-3 h-3 rounded-full bg-gray-400 mr-2"></span>To Do
+                        </span>
+                        <i class="fas fa-lock text-gray-400"></i>
+                    </div>
+                    <input type="hidden" name="status" value="todo">
+                    <p class="text-xs text-gray-500 mt-1 flex items-center">
+                        <i class="fas fa-info-circle mr-1 text-indigo-600"></i>
+                        New cards are automatically set to "To Do" status
+                    </p>
+                </div>
+
+                <!-- ✅✅ Assign To (FIXED) -->
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-2">
+                        <i class="fas fa-user-tag text-green-500 mr-2"></i>Assign To Developer
+                    </label>
+                    @php
+                        // ✅ FIXED: $project->members sudah return User, bukan pivot
+                        $developers = $project->members()->whereIn('users.role', ['developer', 'designer'])->get();
+                    @endphp
+                    @if($developers->count() > 0)
+                        <div class="space-y-2 max-h-48 overflow-y-auto border-2 border-gray-200 rounded-xl p-3 bg-gray-50">
+                            @foreach($developers as $developer)
+                                <label class="flex items-center space-x-3 p-2 rounded-lg hover:bg-white transition cursor-pointer">
+                                    <input type="checkbox" name="assigned_to[]" value="{{ $developer->id }}"
+                                           class="w-4 h-4 text-indigo-600 rounded focus:ring-indigo-500">
+                                    <div class="flex items-center space-x-2">
+                                        <div class="h-8 w-8 rounded-full bg-indigo-600 flex items-center justify-center text-white font-bold text-xs">
+                                            {{ strtoupper(substr($developer->full_name ?? $developer->username, 0, 1)) }}
+                                        </div>
+                                        <div>
+                                            <p class="text-sm font-semibold text-gray-800">{{ $developer->full_name ?? $developer->username }}</p>
+                                            <p class="text-xs text-gray-500">{{ ucfirst($developer->role) }}</p>
+                                        </div>
+                                    </div>
+                                </label>
+                            @endforeach
+                        </div>
+                    @else
+                        <div class="bg-yellow-50 border border-yellow-200 rounded-xl p-3 text-sm text-yellow-800">
+                            <i class="fas fa-exclamation-triangle mr-2"></i>No developers available. Please add developers to project first.
+                        </div>
+                    @endif
+                </div>
+            </div>
+
+            <!-- Modal Footer -->
+            <div class="sticky bottom-0 bg-gray-50 border-t border-gray-200 px-6 py-4 flex justify-end space-x-3 rounded-b-2xl">
+                <button type="button" onclick="closeModalAddCard()"
+                        class="px-5 py-2.5 bg-gray-300 hover:bg-gray-400 text-gray-800 font-semibold rounded-xl transition">
+                    <i class="fas fa-times mr-2"></i>Cancel
+                </button>
+                <button type="submit"
+                        class="px-5 py-2.5 bg-gradient-to-r from-indigo-600 to-blue-600 hover:from-indigo-700 hover:to-blue-700 text-white font-semibold rounded-xl transition shadow-lg">
+                    <i class="fas fa-save mr-2"></i>Create Card
+                </button>
+            </div>
+        </form>
+    </div>
 </div>
 @endsection
+
+@push('scripts')
+<script>
+// Modal Functions
+function openModalAddCard() {
+    document.getElementById('modalAddCard').classList.remove('hidden');
+}
+
+function closeModalAddCard() {
+    document.getElementById('modalAddCard').classList.add('hidden');
+}
+
+// Close modal on ESC key
+document.addEventListener('keydown', function(e) {
+    if (e.key === 'Escape') {
+        closeModalAddCard();
+    }
+});
+
+// Close modal on backdrop click
+document.getElementById('modalAddCard').addEventListener('click', function(e) {
+    if (e.target === this) {
+        closeModalAddCard();
+    }
+});
+
+// Smooth scroll behavior
+document.addEventListener('DOMContentLoaded', function() {
+    const boardScroll = document.querySelector('.board-scroll');
+    if (boardScroll) {
+        const firstIncomplete = boardScroll.querySelector('.board-column');
+        if (firstIncomplete) {
+            firstIncomplete.scrollIntoView({ behavior: 'smooth', inline: 'start' });
+        }
+    }
+});
+</script>
+@endpush

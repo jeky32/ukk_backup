@@ -33,8 +33,20 @@
 </head>
 <body class="bg-gray-100">
     <div class="flex min-h-screen">
-        <!-- Sidebar -->
-        @include('components.admin-sidebar')
+        <!-- Sidebar - Role Based -->
+        @if(Auth::check())
+            @if(Auth::user()->role === 'developer')
+                @include('components.developer-sidebar')
+            @elseif(Auth::user()->role === 'teamlead')
+                @include('components.teamlead-sidebar')
+            @elseif(Auth::user()->role === 'designer')
+                @include('components.designer-sidebar')
+            @else
+                @include('components.admin-sidebar')
+            @endif
+        @else
+            @include('components.admin-sidebar')
+        @endif
 
         <!-- Main Content -->
         <div class="flex-1 flex flex-col">
@@ -57,11 +69,12 @@
                     @endif
 
                     <div class="flex items-center space-x-4">
-                        <!-- Notifications -->
+
+                        {{--  <!-- Notifications -->
                         <button class="relative p-2 text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-lg">
                             <i class="fas fa-bell"></i>
                             <span class="absolute top-0 right-0 w-2 h-2 bg-red-500 rounded-full"></span>
-                        </button>
+                        </button>  --}}
 
                         <!-- User Menu -->
                         <div class="relative" x-data="{ open: false }">
@@ -81,11 +94,12 @@
                             <!-- Dropdown Menu -->
                             <div x-show="open"
                                  @click.away="open = false"
+                                 x-transition
                                  class="absolute right-0 mt-2 w-48 bg-white rounded-lg shadow-lg border border-gray-200 py-1 z-50">
                                 <a href="#" class="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100">
                                     <i class="fas fa-user mr-2"></i>Profil
                                 </a>
-                                <a href="#" class="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100">
+                                <a href="{{ route('admin.settings') }}" class="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100">
                                     <i class="fas fa-cog mr-2"></i>Pengaturan
                                 </a>
                                 <div class="border-t border-gray-200 my-1"></div>
@@ -106,28 +120,35 @@
             <main class="flex-1 p-6 overflow-auto">
                 <!-- Flash Messages -->
                 @if(session('success'))
-                    <div class="bg-green-100 border border-green-400 text-green-700 px-4 py-3 rounded-lg mb-6">
-                        <div class="flex items-center">
-                            <i class="fas fa-check-circle mr-2"></i>
-                            {{ session('success') }}
-                        </div>
+                    <div class="bg-green-100 border border-green-400 text-green-700 px-4 py-3 rounded-lg mb-6 flex items-center">
+                        <i class="fas fa-check-circle mr-2"></i>
+                        <span>{{ session('success') }}</span>
+                        <button onclick="this.parentElement.remove()" class="ml-auto text-green-700 hover:text-green-900">
+                            <i class="fas fa-times"></i>
+                        </button>
                     </div>
                 @endif
 
                 @if(session('error'))
-                    <div class="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded-lg mb-6">
-                        <div class="flex items-center">
-                            <i class="fas fa-exclamation-circle mr-2"></i>
-                            {{ session('error') }}
-                        </div>
+                    <div class="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded-lg mb-6 flex items-center">
+                        <i class="fas fa-exclamation-circle mr-2"></i>
+                        <span>{{ session('error') }}</span>
+                        <button onclick="this.parentElement.remove()" class="ml-auto text-red-700 hover:text-red-900">
+                            <i class="fas fa-times"></i>
+                        </button>
                     </div>
                 @endif
 
                 @if($errors->any())
                     <div class="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded-lg mb-6">
-                        <div class="flex items-center">
-                            <i class="fas fa-exclamation-triangle mr-2"></i>
-                            <span>Terjadi kesalahan:</span>
+                        <div class="flex items-center justify-between">
+                            <div class="flex items-center">
+                                <i class="fas fa-exclamation-triangle mr-2"></i>
+                                <span>Terjadi kesalahan:</span>
+                            </div>
+                            <button onclick="this.parentElement.parentElement.remove()" class="text-red-700 hover:text-red-900">
+                                <i class="fas fa-times"></i>
+                            </button>
                         </div>
                         <ul class="mt-2 list-disc list-inside text-sm">
                             @foreach($errors->all() as $error)
